@@ -8,58 +8,58 @@
 import Foundation
 
 class AccelData: NSObject {
-  var _id: String = ""
+    var _id: String = ""
 
-  var id: String {
-    get {
-      return _id
+    var id: String {
+        get {
+            return _id
+        }
+        set(newval) {
+            _id = newval
+        }
     }
-    set(newval) {
-      _id = newval
-    }
-  }
 
-  var _rssi: String = ""
+    var _rssi: String = ""
 
-  var rssi: String {
-    get {
-      return _rssi
+    var rssi: String {
+        get {
+            return _rssi
+        }
+        set(newval) {
+            _rssi = newval
+        }
     }
-    set(newval) {
-      _rssi = newval
-    }
-  }
 
-  var _delay: String = ""
+    var _delay: String = ""
 
-  var delay: String {
-    get {
-      return _delay
+    var delay: String {
+        get {
+            return _delay
+        }
+        set(newval) {
+            _delay = newval
+        }
     }
-    set(newval) {
-      _delay = newval
-    }
-  }
 
-  var _delayList: [String] = []
+    var _delayList: [String] = []
 
-  var delayList: [String] {
-    get {
-      return _delayList
+    var delayList: [String] {
+        get {
+            return _delayList
+        }
+        set(newval) {
+            _delayList = newval
+        }
     }
-    set(newval) {
-      _delayList = newval
-    }
-  }
 
-  var _count: String = ""
+    var _count: String = ""
 
-  var count: String {
-    get {
-      return _count
+    var count: String {
+        get {
+            return _count
+        }
+        set(newval) {
+            _count = newval
+        }
     }
-    set(newval) {
-      _count = newval
-    }
-  }
 }

@@ -1,32 +1,28 @@
-//
-//  aiq_iosApp.swift
-//  aiq_ios
-//
-//  Created by 이정호 on 2/22/25.
-//
-
 import SwiftUI
-import SwiftData
+import UserNotifications
 
 @main
 struct aiq_iosApp: App {
-    var sharedModelContainer: ModelContainer = {
-        let schema = Schema([
-            Item.self,
-        ])
-        let modelConfiguration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: false)
+    // NotificationDelegate 인스턴스를 저장하는 프로퍼티 추가
+    let notificationDelegate = NotificationDelegate()
 
-        do {
-            return try ModelContainer(for: schema, configurations: [modelConfiguration])
-        } catch {
-            fatalError("Could not create ModelContainer: \(error)")
-        }
-    }()
+    init() {
+        // 저장된 notificationDelegate를 delegate로 설정
+        UNUserNotificationCenter.current().delegate = notificationDelegate
+    }
 
     var body: some Scene {
         WindowGroup {
             ContentView()
         }
-        .modelContainer(sharedModelContainer)
+    }
+}
+
+class NotificationDelegate: NSObject, UNUserNotificationCenterDelegate {
+    func userNotificationCenter(_ center: UNUserNotificationCenter,
+                                willPresent notification: UNNotification,
+                                withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void)
+    {
+        completionHandler([.banner, .sound])
     }
 }

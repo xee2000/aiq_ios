@@ -6,7 +6,7 @@
 //
 
 enum DoorphoneProtocolType {
-  case SECURE_KEY
-  case SEND_COMMAND
-  case ERROR
+    case SECURE_KEY
+    case SEND_COMMAND
+    case ERROR
 }

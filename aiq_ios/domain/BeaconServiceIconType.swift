@@ -7,8 +7,8 @@
 //
 
 enum BeaconServiceIconType: String {
-  case ic_onepass
-  case ic_onepass_error
-  case ic_parking
-  case ic_parking_error
+    case ic_onepass
+    case ic_onepass_error
+    case ic_parking
+    case ic_parking_error
 }

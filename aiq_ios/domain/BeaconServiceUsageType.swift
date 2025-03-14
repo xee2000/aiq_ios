@@ -8,8 +8,8 @@
 //
 
 enum BeaconServiceUsageType {
-  case OnePass
-  case Parking
-  case Both
-  case BLE_PARKING
+    case OnePass
+    case Parking
+    case Both
+    case BLE_PARKING
 }
