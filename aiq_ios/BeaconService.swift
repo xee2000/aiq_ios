@@ -216,7 +216,6 @@ class BeaconService: NSObject, ObservableObject, CLLocationManagerDelegate, CBCe
         let status = CLLocationManager.authorizationStatus()
         if status != .authorizedAlways {
             locationManager.requestAlwaysAuthorization()
-            // 수정확이
         }
     }
 
@@ -583,11 +582,10 @@ class BeaconService: NSObject, ObservableObject, CLLocationManagerDelegate, CBCe
     }
 
     func locationManager(_ manager: CLLocationManager, didRangeBeacons beacons: [CLBeacon], in region: CLBeaconRegion) {
-        // RestApi.sendErrorData(body: ["message": "didRangeBeacons \(beacons.count)"])
+//        RestApi.sendErrorData(body: ["message": "didRangeBeacons \(beacons.count)"])
         if beacons.count <= 0 {
             return
         }
-//        print("\(Date()) \(TAG) didRangeBeacons count: \(beacons.count)  region : \(region.identifier)")
 
         // 시작하는 서비스에 주치위치 인식 서비스가 포함되어 있을 경우 Timer 실행
         if beaconServiceUsageType.contains(.BLE_PARKING) {
@@ -1161,7 +1159,10 @@ class BeaconService: NSObject, ObservableObject, CLLocationManagerDelegate, CBCe
                                                cumulativeRollAverage = cumulativeRoll / Double(self.gyroRollArray.count - 1)
                                                cumulativePitchAverage = cumulativePitch / Double(self.gyroPitchArray.count - 1)
                                                cumulativeYawAverage = cumulativeYaw / Double(self.gyroYawArray.count - 1)
-                                               GyroDataManager().updateGyroData(
+                                               print("x: ", cumulativeRollAverage)
+                                               print("y: ", cumulativePitchAverage)
+                                               print("z: ", cumulativeYawAverage)
+                                               GyroDataManager.shared.updateGyroData(
                                                    roll: cumulativeRollAverage,
                                                    pitch: cumulativePitchAverage,
                                                    yaw: cumulativeYawAverage

@@ -1,6 +1,5 @@
 import CoreBluetooth
 import CoreLocation
-import CoreMotion
 import SwiftUI
 import UserNotifications
 
@@ -76,7 +75,6 @@ struct ContentView: View {
                         - 동: \(dong)
                         - 호: \(ho)
                         - 단지명(표시용): \(uuidLabel(for: uuid))
-                        - 실제 UUID: \(uuid)
                         """)
                         
                         beaconService.requestAlwaysAuthorization()
@@ -126,11 +124,7 @@ struct ContentView: View {
 
 struct ServiceRunningView: View {
     let onLogout: () -> Void
-    @ObservedObject var gyroData: GyroDataManager
-    
-    // CMMotionManager 인스턴스 (실제 센서 데이터를 받아오기 위한)
-    @State private var motionManager = CMMotionManager()
-    
+    @ObservedObject var gyroData: GyroDataManager // ContentView에서 전달받은 공유 인스턴스 사용
     var body: some View {
         VStack(spacing: 20) {
             Text("Gyro Data")
@@ -139,7 +133,7 @@ struct ServiceRunningView: View {
             Text("x: \(gyroData.x, specifier: "%.3f")")
             Text("y: \(gyroData.y, specifier: "%.3f")")
             Text("z: \(gyroData.z, specifier: "%.3f")")
-            
+
             Button("로그아웃") {
                 onLogout()
             }
@@ -150,32 +144,9 @@ struct ServiceRunningView: View {
         }
         .padding()
         .onAppear {
-            startGyroUpdates()
+            // 여기서 BeaconService가 GyroStart()를 호출해 업데이트하는 로직이 실행됩니다.
+            // BeaconService 내부에서 GyroDataManager.shared가 업데이트되면 이 뷰는 실시간으로 반영됩니다.
             print("ServiceRunningView appeared")
-        }
-        .onDisappear {
-            motionManager.stopGyroUpdates()
-        }
-    }
-    
-    // Timer 없이 센서 업데이트를 시작하는 함수
-    func startGyroUpdates() {
-        if motionManager.isGyroAvailable {
-            motionManager.gyroUpdateInterval = 1.0 / 6.0
-            motionManager.startGyroUpdates(to: OperationQueue.current ?? OperationQueue.main) { data, error in
-                if let data = data {
-                    // 센서에서 받아온 원시값을 그대로 업데이트
-                    self.gyroData.updateGyroData(
-                        roll: data.rotationRate.x,
-                        pitch: data.rotationRate.y,
-                        yaw: data.rotationRate.z
-                    )
-                } else if let error = error {
-                    print("Gyro update error: \(error.localizedDescription)")
-                }
-            }
-        } else {
-            print("Gyro not available")
         }
     }
 }

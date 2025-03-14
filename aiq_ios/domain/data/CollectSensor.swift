@@ -62,6 +62,7 @@ class CollectSensor: NSObject, URLSessionDelegate {
         collectDataDic["Gyros"] = gyros
         collectDataDic["AccelBeacons"] = accelBeacons
         collectDataDic["ParingState"] = paringDate
+        collectDataDic["Version"] = "1.0"
     }
 
     @objc func removeData() {
