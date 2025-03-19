@@ -80,7 +80,7 @@ struct ContentView: View {
                         beaconService.requestAlwaysAuthorization()
                         beaconService.startMonitoring()
                         BeaconServiceFore.StartingService()
-                        
+
                         loggedIn = true
                         purpose = "parking"
                         Authorization = "Bearer xxxxxx" // 실제 토큰

@@ -1076,7 +1076,7 @@ class BeaconService: NSObject, ObservableObject, CLLocationManagerDelegate, CBCe
             { response, error in
                 if let response = response {
                     print("API 호출 성공: \(response)")
-
+                   
                     // 에러 파일이 존재하는 경우에만 ErrorApi 호출
                     if JsonFileSave.isFileJsonExists() {
                         self.collectSensor.ErrorApi(userId: username,
@@ -1101,7 +1101,6 @@ class BeaconService: NSObject, ObservableObject, CLLocationManagerDelegate, CBCe
                 }
             }
 
-            BeaconServiceFore.ParkingComplete()
             carDraftStartCheck = true // 자이로로 시작할 수 있도록 완료되면 초기화
             beaconMajor1 = false
             sendDataPermission = false
