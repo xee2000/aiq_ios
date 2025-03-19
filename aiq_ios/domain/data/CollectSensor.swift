@@ -12,6 +12,7 @@ class CollectSensor: NSObject, URLSessionDelegate {
 
     var inputDate: String = ""
     var paringDate: String = ""
+    var savedFileName: String = ""
 
     var sensorsDic: [String: Any] = .init()
     var sensors: [Any] = .init()
@@ -61,7 +62,7 @@ class CollectSensor: NSObject, URLSessionDelegate {
         collectDataDic["Beacons"] = beacons
         collectDataDic["Gyros"] = gyros
         collectDataDic["AccelBeacons"] = accelBeacons
-        collectDataDic["ParingState"] = paringDate
+        collectDataDic["ParingState"] = "non-paring"
         collectDataDic["Version"] = "1.0"
     }
 
@@ -83,7 +84,7 @@ class CollectSensor: NSObject, URLSessionDelegate {
     }
 
     @objc func sendGyroApi(count: Int, userId: String, completion: @escaping (Bool, Error?) -> Void) {
-        guard let url = URL(string: "https://221.158.214.211:7777/pms-server-web/app/gyroInfo?count=\(count)&userId=\(userId)") else {
+        guard let url = URL(string: "https://woorisys2022.iptime.org:7777/pms-server-web/app/gyroInfo?count=\(count)&userId=\(userId)") else {
             print("Invalid URL: 115.144.122.75:4000/pms-server-web/app/gyroInfo?count=\(count)&userId=\(userId)")
             completion(false, NSError(domain: "InvalidURL", code: -1, userInfo: [NSLocalizedDescriptionKey: "Invalid URL"]))
             return
@@ -142,12 +143,20 @@ class CollectSensor: NSObject, URLSessionDelegate {
         task.resume()
     }
 
-    @objc func RestApi(userId: String, dong: String, ho: String, phoneInfo: String, collectSensor: CollectSensor) {
+    @objc func RestApi(userId: String,
+                       dong: String,
+                       ho: String,
+                       phoneInfo: String,
+                       collectSensor: CollectSensor,
+                       errorcode: Int,
+                       completion: @escaping (Any?, NSError?) -> Void)
+    {
         print("Phone Info: \(phoneInfo)")
-        print("collectDataDic before sending: \(collectSensor.collectDataDic)") // 전송 직전 상태 확인
+        print("collectDataDic before sending: \(collectSensor.collectDataDic)")
 
-        guard let url = URL(string: "https://221.158.214.211:7777/pms-server-web/app/calcLocation?userId=\(userId)&dong=\(dong)&ho=\(ho)") else {
-            print("Invalid URL: https://221.158.214.211:24999/pms-server-web/app/calcLocation?userId=\(userId)&dong=\(dong)&ho=\(ho)")
+        guard let url = URL(string: "https://woorisys2022.iptime.org:7777/pms-server-web/app/calcLocation?userId=\(userId)&dong=\(dong)&ho=\(ho)&errorcode=\(errorcode)") else {
+            print("Invalid URL")
+            completion(nil, NSError(domain: "InvalidURL", code: 0, userInfo: nil))
             return
         }
 
@@ -157,57 +166,144 @@ class CollectSensor: NSObject, URLSessionDelegate {
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
 
-        // JSON 데이터 생성
-        var payload = collectSensor.collectDataDic
-        // 예시: payload["count"] = count  // 필요한 경우 주석 해제
+        let payload = collectSensor.collectDataDic
         do {
             let jsonData = try JSONSerialization.data(withJSONObject: payload, options: [])
             request.httpBody = jsonData
             print("Payload JSON: \(payload)")
         } catch {
             print("Error encoding JSON: \(error.localizedDescription)")
+            completion(nil, error as NSError)
             return
         }
 
         let session = URLSession(configuration: .default, delegate: self, delegateQueue: nil)
         let task = session.dataTask(with: request) { data, response, error in
-
             if let error = error {
                 print("Error in REST API call: \(error.localizedDescription)")
-                print("Full error details: \(error)")
+                completion(nil, error as NSError)
                 return
             }
 
-            if let httpResponse = response as? HTTPURLResponse {
-                print("HTTP Response Code: \(httpResponse.statusCode)")
-
-                guard httpResponse.statusCode == 200 else {
-                    print("Server returned an error. HTTP status code: \(httpResponse.statusCode)")
-                    if let data = data, let responseBody = String(data: data, encoding: .utf8) {
-                        print("Response body: \(responseBody)")
-                    }
-                    let serverError = NSError(domain: "ServerError", code: httpResponse.statusCode, userInfo: [NSLocalizedDescriptionKey: "Server returned an error"])
-                    return
-                }
-            } else {
+            guard let httpResponse = response as? HTTPURLResponse else {
                 print("No valid HTTP response received.")
+                completion(nil, NSError(domain: "NoHTTPResponse", code: 0, userInfo: nil))
+                return
+            }
+
+            print("HTTP Response Code: \(httpResponse.statusCode)")
+            guard httpResponse.statusCode == 200 else {
+                print("Server returned an error. HTTP status code: \(httpResponse.statusCode)")
+                if let data = data, let responseBody = String(data: data, encoding: .utf8) {
+                    print("Response body: \(responseBody)")
+                }
+                let serverError = NSError(domain: "ServerError",
+                                          code: httpResponse.statusCode,
+                                          userInfo: [NSLocalizedDescriptionKey: "Server returned an error"])
+                completion(nil, serverError)
+                return
             }
 
             if let data = data {
                 do {
                     let responseJson = try JSONSerialization.jsonObject(with: data, options: [])
                     print("Response JSON: \(responseJson)")
+                    completion(responseJson, nil)
                 } catch {
                     print("Error decoding response JSON: \(error.localizedDescription)")
                     if let rawData = String(data: data, encoding: .utf8) {
                         print("Raw response data: \(rawData)")
                     }
+                    completion(nil, error as NSError)
                 }
             } else {
                 print("No response data received")
+                completion(nil, NSError(domain: "NoData", code: 0, userInfo: nil))
             }
         }
+        task.resume()
+    }
 
+    @objc func ErrorApi(userId: String,
+                        dong: String,
+                        ho: String,
+                        phoneInfo: String,
+                        completion: @escaping (Any?, NSError?) -> Void)
+    {
+        guard let url = URL(string: "https://192.168.0.33:8080/pms-server-web/app/errorScript?userId=\(userId)&dong=\(dong)&ho=\(ho)") else {
+            print("Invalid URL")
+            completion(nil, NSError(domain: "InvalidURL", code: 0, userInfo: nil))
+            return
+        }
+
+        print("Sending RestApi request to URL: \(url.absoluteString)")
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+        // 에러파일이 존재한다면 가져와서 보내지도록 가져온다
+        if let jsonObject = JsonFileSave.loadJson(filename: "file") {
+            do {
+                let data = try JSONSerialization.data(withJSONObject: jsonObject, options: [])
+                request.httpBody = data
+            } catch {
+                print("JSON 객체를 Data로 변환하는데 실패했습니다: \(error.localizedDescription)")
+                completion(nil, error as NSError)
+                return
+            }
+        } else {
+            print("파일에서 JSON 객체를 불러오지 못했습니다.")
+            let fileError = NSError(domain: "FileNotFound", code: 0, userInfo: [NSLocalizedDescriptionKey: "파일에서 JSON 객체를 불러오지 못했습니다."])
+            completion(nil, fileError)
+            return
+        }
+
+        let session = URLSession(configuration: .default, delegate: self, delegateQueue: nil)
+        let task = session.dataTask(with: request) { data, response, error in
+            if let error = error {
+                print("Error in REST API call: \(error.localizedDescription)")
+                completion(nil, error as NSError)
+                return
+            }
+
+            guard let httpResponse = response as? HTTPURLResponse else {
+                print("No valid HTTP response received.")
+                completion(nil, NSError(domain: "NoHTTPResponse", code: 0, userInfo: nil))
+                return
+            }
+
+            print("HTTP Response Code: \(httpResponse.statusCode)")
+            guard httpResponse.statusCode == 200 else {
+                print("Server returned an error. HTTP status code: \(httpResponse.statusCode)")
+
+                if let data = data, let responseBody = String(data: data, encoding: .utf8) {
+                    print("Response body: \(responseBody)")
+                }
+                let serverError = NSError(domain: "ServerError",
+                                          code: httpResponse.statusCode,
+                                          userInfo: [NSLocalizedDescriptionKey: "Server returned an error"])
+                completion(nil, serverError)
+                return
+            }
+
+            if let data = data {
+                do {
+                    let responseJson = try JSONSerialization.jsonObject(with: data, options: [])
+                    print("Response JSON: \(responseJson)")
+                    completion(responseJson, nil)
+                } catch {
+                    print("Error decoding response JSON: \(error.localizedDescription)")
+                    if let rawData = String(data: data, encoding: .utf8) {
+                        print("Raw response data: \(rawData)")
+                    }
+                    completion(nil, error as NSError)
+                }
+            } else {
+                print("No response data received")
+                completion(nil, NSError(domain: "NoData", code: 0, userInfo: nil))
+            }
+        }
         task.resume()
     }
 

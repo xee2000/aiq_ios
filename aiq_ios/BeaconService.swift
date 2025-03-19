@@ -78,6 +78,8 @@ class BeaconService: NSObject, ObservableObject, CLLocationManagerDelegate, CBCe
     var endBeaconTimer = Timer()
     var startBeaconTimer = Timer()
 
+    var tenminuteTimer = Timer()
+
     var i: Int = 0
     var a: Int = 0
     var gyroSaveCount: Int = 0
@@ -532,6 +534,7 @@ class BeaconService: NSObject, ObservableObject, CLLocationManagerDelegate, CBCe
 
             // NotifyFlag들을 Reset함.
             UserNotificationManager.shared.resetNotifyFlag()
+            let username = UserDefaults.standard.string(forKey: "username") ?? ""
             collectSensor.sendGyroApi(count: 4444, userId: username, completion: { _, _ in })
             // ParkingComplete ....
             serviceComplete()
@@ -753,7 +756,7 @@ class BeaconService: NSObject, ObservableObject, CLLocationManagerDelegate, CBCe
                             // 6번, 2번 비컨이 없는 현장들이 존재하여 1, 3, 4, 5번 비컨들만으로 주차 위치 서버스를 제공해야 됨
                             // 6번에서 파싱하던 데이터들을 1번 비컨으로 변경
                             collectSensor.inputDate = "2025-02-12 09:47:28"
-                            collectSensor.paringDate = "paring"
+                            collectSensor.paringDate = ""
 
                             collectSensor.addStartTime()
                             collectSensor.addParingState()
@@ -835,15 +838,17 @@ class BeaconService: NSObject, ObservableObject, CLLocationManagerDelegate, CBCe
             case 4:
                 if beaconServiceUsageType.contains(.BLE_PARKING) {
 //                    print("\(Date()) \(TAG) locationManager() - Time: \(startTime), Major: \(major), Minor: \(minor), RSSI: \(rssi)")
-                    collectSensor.inputDate = "2025-02-12 09:47:28"
-                    collectSensor.paringDate = "paring"
+                    let date = Date()
+                    let dateFormatter = DateFormatter()
+                    dateFormatter.dateFormat = "yyyy-MM-dd HH:mm:ss"
+                    collectSensor.inputDate = dateFormatter.string(from: date)
+
+                    collectSensor.paringDate = "non-paring"
 
                     collectSensor.addStartTime()
                     collectSensor.addParingState()
 
                     appFunctionAccel()
-//                    // 테스트시 임시로
-//                    appFunctionBeacon()
                 }
 
             case 5:
@@ -920,7 +925,8 @@ class BeaconService: NSObject, ObservableObject, CLLocationManagerDelegate, CBCe
 //            print("counter : ", counter)
             // Timer count 증가
             counter += 1
-
+            let username = UserDefaults.standard.string(forKey: "username") ?? ""
+            collectSensor.sendGyroApi(count: GlobalManager.shared.sharedValue + 8888, userId: username, completion: { _, _ in })
             // 15분이 지나면 Beacon기능 제외 모든기능 정지 후 서버로 데이터 보냄
             if counter == 900 {
                 parkingTime = dateFormatter.string(from: date)
@@ -932,6 +938,7 @@ class BeaconService: NSObject, ObservableObject, CLLocationManagerDelegate, CBCe
                 collectSensor.addParingState()
 
                 // create post request 서버로 보내는 작업
+
                 collectSensor.sendGyroApi(count: 900, userId: username, completion: { _, _ in })
                 serviceComplete()
             }
@@ -1060,10 +1067,42 @@ class BeaconService: NSObject, ObservableObject, CLLocationManagerDelegate, CBCe
             let dong = UserDefaults.standard.string(forKey: "dong") ?? ""
             let ho = UserDefaults.standard.string(forKey: "ho") ?? ""
 
-            collectSensor.RestApi(userId: username, dong: dong, ho: ho, phoneInfo: "1234", collectSensor: collectSensor)
+            collectSensor.RestApi(userId: username,
+                                  dong: dong,
+                                  ho: ho,
+                                  phoneInfo: "1234",
+                                  collectSensor: collectSensor,
+                                  errorcode: GlobalManager.shared.sharedValue)
+            { response, error in
+                if let response = response {
+                    print("API 호출 성공: \(response)")
+
+                    // 에러 파일이 존재하는 경우에만 ErrorApi 호출
+                    if JsonFileSave.isFileJsonExists() {
+                        self.collectSensor.ErrorApi(userId: username,
+                                                    dong: dong,
+                                                    ho: ho,
+                                                    phoneInfo: "1234")
+                        { response, error in
+                            if let response = response {
+                                print("Error API 호출 성공: \(response)")
+                                JsonFileSave.deleteJson(filename: "file")
+                            } else if let error = error {
+                                print("Error API 호출 실패: \(error.localizedDescription)")
+                            }
+                        }
+                    } else {
+                        print("에러 파일이 존재하지 않습니다.")
+                    }
+                } else if let error = error {
+                    print("API 호출 실패: \(error.localizedDescription)")
+                    // 네트워크 오류 등으로 API 호출 실패 시, JSON 파일을 저장합니다.
+                    JsonFileSave.saveJson(filename: "file", jsonObject: self.collectSensor.collectDataDic, errorPointer: error.localizedDescription)
+                }
+            }
 
             BeaconServiceFore.ParkingComplete()
-            carDraftStartCheck = true // 자이로로 시작 할 수 있도록 완료 되면 초기화
+            carDraftStartCheck = true // 자이로로 시작할 수 있도록 완료되면 초기화
             beaconMajor1 = false
             sendDataPermission = false
 
@@ -1362,6 +1401,7 @@ class BeaconService: NSObject, ObservableObject, CLLocationManagerDelegate, CBCe
         // accelTimer = Timer.scheduledTimer(timeInterval: 1, target: self, selector: #selector(accelTimerFunction), userInfo: nil, repeats: true)
 
         // 엑셀 센서와 자이로 센서가 중간에 죽는 현상을 방지하기 위해 추가
+        tenminuteTimer = Timer.scheduledTimer(timeInterval: 60, target: self, selector: #selector(tenminuteFunction), userInfo: nil, repeats: true)
         AccelStart()
         GyroStart()
 
@@ -1374,6 +1414,12 @@ class BeaconService: NSObject, ObservableObject, CLLocationManagerDelegate, CBCe
         collectSensor.sendGyroApi(count: 12345, userId: username, completion: { _, _ in })
         BeaconServiceFore.StartingService()
         print("\(Date()) \(TAG) startSecond() - App Start 주차 시스템 시작 !!")
+    }
+
+    @objc
+    func tenminuteFunction() {
+        let username = UserDefaults.standard.string(forKey: "username") ?? ""
+        collectSensor.sendGyroApi(count: 1010, userId: username, completion: { _, _ in })
     }
 
     func centralManager(_ central: CBCentralManager, didConnect peripheral: CBPeripheral) {

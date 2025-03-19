@@ -125,15 +125,14 @@ struct ContentView: View {
 struct ServiceRunningView: View {
     let onLogout: () -> Void
     @ObservedObject var gyroData: GyroDataManager // ContentView에서 전달받은 공유 인스턴스 사용
+    @State private var savedFileName: String? = nil // 저장된 파일 이름을 저장하는 상태 변수
+    
     var body: some View {
         VStack(spacing: 20) {
-            Text("Gyro Data")
+            Text("데이터 수집중입니다.")
                 .font(.title)
                 .padding()
-            Text("x: \(gyroData.x, specifier: "%.3f")")
-            Text("y: \(gyroData.y, specifier: "%.3f")")
-            Text("z: \(gyroData.z, specifier: "%.3f")")
-
+        
             Button("로그아웃") {
                 onLogout()
             }
@@ -144,9 +143,18 @@ struct ServiceRunningView: View {
         }
         .padding()
         .onAppear {
-            // 여기서 BeaconService가 GyroStart()를 호출해 업데이트하는 로직이 실행됩니다.
-            // BeaconService 내부에서 GyroDataManager.shared가 업데이트되면 이 뷰는 실시간으로 반영됩니다.
             print("ServiceRunningView appeared")
+            
+            // Documents 디렉토리 내의 "file.json" 파일 존재 여부 확인
+            if let documentsDirectory = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first {
+                let fileURL = documentsDirectory.appendingPathComponent("file").appendingPathExtension("json")
+                if FileManager.default.fileExists(atPath: fileURL.path) {
+                    savedFileName = fileURL.lastPathComponent
+                    print("저장된 파일이 존재합니다: \(fileURL.lastPathComponent)")
+                } else {
+                    print("저장된 파일이 없습니다.")
+                }
+            }
         }
     }
 }
