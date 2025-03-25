@@ -77,8 +77,7 @@ struct ContentView: View {
                         - 단지명(표시용): \(uuidLabel(for: uuid))
                         """)
                         
-                        beaconService.requestAlwaysAuthorization()
-                        beaconService.startMonitoring()
+                        beaconService.StartBluetoothService()
                         BeaconServiceFore.StartingService()
 
                         loggedIn = true

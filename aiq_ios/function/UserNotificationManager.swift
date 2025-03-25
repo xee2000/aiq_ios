@@ -9,13 +9,14 @@
 import UserNotifications
 
 struct Notification {
-    var id: String
+    var type: UserNotificationType
     var title: String
     var message: String
     var icon: BluetoothServiceIconType?
 }
 
 class UserNotificationManager {
+    let TAG: String = "UserNotificationManager --"
     static let shared = UserNotificationManager()
   
     let notifyOpenDoor = BooleanToggleForTimeout(timeout: 300.0)
@@ -38,24 +39,22 @@ class UserNotificationManager {
             }
     }
   
-    func addNotification(id: String, title: String, message: String, icon: BluetoothServiceIconType) {
-        if !UserDataSingleton.shared.notification { return }
-        if id == "Onepass" {
-            if notifyOpenDoor.isFlagActive {
+    func addNotification(type: UserNotificationType, title: String, message: String, icon: BluetoothServiceIconType) {
+        if type == .Onepass {
+            if notifyOpenDoor.isFlagActive || !UserDataSingleton.shared.onepassNotification {
                 return
             }
             notifyOpenDoor.activateFlag()
-        }
-        if id == "Parking" {
-            if notifyParking.isFlagActive {
+        } else if type == .Parking {
+            if notifyParking.isFlagActive || !UserDataSingleton.shared.onepassNotification {
                 return
             }
             notifyParking.activateFlag()
         }
-    
-        notifications.enqueue(Notification(id: "TheSharpAiQHome-\(id)", title: title, message: message, icon: icon))
+      
+        notifications.enqueue(Notification(type: type, title: title, message: message, icon: icon))
     }
-  
+    
     func schedule() {
         UNUserNotificationCenter.current().getNotificationSettings { settings in
             switch settings.authorizationStatus {
@@ -71,27 +70,39 @@ class UserNotificationManager {
   
     func scheduleNotifications() {
         while let notification = notifications.dequeue() {
+            let notifyId = "TheSharpAiQHome-\(notification.type.rawValue)"
+        
             let content = UNMutableNotificationContent()
             content.title = notification.title
             content.body = notification.message
-            content.sound = UNNotificationSound.default
+            if notification.type != .Doorphone {
+                content.sound = UNNotificationSound.default
+            }
+        
             if let iconName = notification.icon?.rawValue {
                 if let iconUrl = Bundle.main.url(forResource: iconName, withExtension: "png") {
                     let attachment = try! UNNotificationAttachment(identifier: iconName, url: iconUrl, options: .none)
                     content.attachments = [attachment]
                 } else {
-                    print("UserNotification icon load fail.\(iconName)")
+                    DebugLog.log(TAG, items: "UserNotification icon load fail.\(iconName)")
                 }
             }
-      
+        
             let trigger = UNTimeIntervalNotificationTrigger(timeInterval: 1, repeats: false)
-            let request = UNNotificationRequest(identifier: notification.id, content: content, trigger: trigger)
-      
+            let request = UNNotificationRequest(identifier: notifyId, content: content, trigger: trigger)
+        
             UNUserNotificationCenter.current().add(request) { error in
                 guard error == nil else {
                     return
                 }
-                print("Scheduling notification with id: \(notification.id)")
+                DebugLog.log(self.TAG, items: "Scheduling notification with id: \(notifyId)")
+            }
+        
+            if notification.type == .Doorphone {
+                // 안면인식 도어폰의 스마트 인증 완료 알림의 경우 일정 시간((2초)이 지난 후 취소
+                DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+                    UNUserNotificationCenter.current().removeDeliveredNotifications(withIdentifiers: [notifyId])
+                }
             }
         }
     }

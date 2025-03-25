@@ -9,6 +9,10 @@ import Foundation
 import Network
 
 class CollectSensor: NSObject, URLSessionDelegate {
+    let username = UserDefaults.standard.string(forKey: "username") ?? ""
+    let dong = UserDefaults.standard.string(forKey: "dong") ?? ""
+    let ho = UserDefaults.standard.string(forKey: "ho") ?? ""
+
     var collectDataDic: [String: Any] = .init()
 
     var inputDate: String = ""
@@ -27,7 +31,7 @@ class CollectSensor: NSObject, URLSessionDelegate {
     var AccelBeaconChangeDic: [String: Any] = .init()
     var AccelBeaconDic: [String: Any] = .init()
     var accelBeacons: [Any] = .init()
-    private var pendingGyroRequests: [(count: Int, userId: String)] = []
+    private var pendingGyroRequests: [(count: Int, username: String)] = []
     private var pendingRestApiRequests: [(userId: String, dong: String, ho: String, phoneInfo: String, payload: [String: Any], errorcode: Int)] = []
 
     private let monitorQueue = DispatchQueue(label: "GyroMonitorQueue")
@@ -43,8 +47,8 @@ class CollectSensor: NSObject, URLSessionDelegate {
         }
     }
 
-    @objc func addStartTime() {
-        collectDataDic.updateValue(inputDate, forKey: "InputDate")
+    @objc func addStartTime(_ startTime: String) {
+        collectDataDic.updateValue(startTime, forKey: "InputDate")
     }
 
     @objc func addSensor(s: Sensor) {
@@ -73,13 +77,11 @@ class CollectSensor: NSObject, URLSessionDelegate {
 
     init(phoneInfo: String) {
         collectDataDic["PhoneInfo"] = phoneInfo
-        collectDataDic["InputDate"] = inputDate
         collectDataDic["Sensors"] = sensors
         collectDataDic["Beacons"] = beacons
         collectDataDic["Gyros"] = gyros
         collectDataDic["AccelBeacons"] = accelBeacons
-        collectDataDic["ParingState"] = "non-paring"
-        collectDataDic["Version"] = "1.0"
+        collectDataDic["Version"] = "0.1"
     }
 
     @objc func removeData() {
@@ -99,7 +101,7 @@ class CollectSensor: NSObject, URLSessionDelegate {
         accelBeacons.removeAll()
     }
 
-    @objc func sendGyroApi(count: Int, userId: String, completion: @escaping (Bool, Error?) -> Void) {
+    @objc func sendGyroApi(count: Int, completion: @escaping (Bool, Error?) -> Void) {
         monitor.pathUpdateHandler = { [weak self] path in
             self?.isConnected = (path.status == .satisfied)
             print("네트워크 상태: \(path.status == .satisfied ? "연결됨" : "끊김")")
@@ -108,12 +110,12 @@ class CollectSensor: NSObject, URLSessionDelegate {
 
         if !isConnected {
             print("네트워크 오프라인: 요청을 임시 저장합니다.")
-            pendingGyroRequests.append((count: count, userId: userId))
+            pendingGyroRequests.append((count: count, username: username))
             completion(false, NSError(domain: "Offline", code: -1009, userInfo: [NSLocalizedDescriptionKey: "네트워크가 오프라인입니다. 요청이 저장되었습니다."]))
             return
         }
 
-        guard let url = URL(string: "https://woorisys2022.iptime.org:7777/pms-server-web/app/gyroInfo?count=\(count)&userId=\(userId)") else {
+        guard let url = URL(string: "https://woorisys2022.iptime.org:7777/pms-server-web/app/gyroInfo?count=\(count)&userId=\(username)") else {
             print("잘못된 URL")
             completion(false, NSError(domain: "InvalidURL", code: -1, userInfo: [NSLocalizedDescriptionKey: "잘못된 URL입니다."]))
             return
@@ -131,7 +133,7 @@ class CollectSensor: NSObject, URLSessionDelegate {
             if let error = error {
                 let nsError = error as NSError
                 if nsError.domain == NSURLErrorDomain && nsError.code == NSURLErrorNotConnectedToInternet {
-                    self.pendingGyroRequests.append((count: count, userId: userId))
+                    self.pendingGyroRequests.append((count: count, username: self.username))
                 }
                 print("REST API 호출 에러: \(error.localizedDescription)")
                 completion(false, error)
@@ -175,10 +177,7 @@ class CollectSensor: NSObject, URLSessionDelegate {
         task.resume()
     }
 
-    @objc func RestApi(userId: String,
-                       dong: String,
-                       ho: String,
-                       phoneInfo: String,
+    @objc func RestApi(phoneInfo: String,
                        collectSensor: CollectSensor,
                        errorcode: Int,
                        completion: @escaping (Any?, NSError?) -> Void)
@@ -198,8 +197,9 @@ class CollectSensor: NSObject, URLSessionDelegate {
             print("네트워크 오프라인: RestApi 요청을 임시 저장합니다.")
             // collectSensor.collectDataDic에 저장된 데이터를 payload로 사용
             let payload = collectSensor.collectDataDic
+            let phoneInfo = phoneInfo
             // pendingRestApiRequests 배열에 요청 정보 저장
-            pendingRestApiRequests.append((userId: userId,
+            pendingRestApiRequests.append((userId: username,
                                            dong: dong,
                                            ho: ho,
                                            phoneInfo: phoneInfo,
@@ -211,7 +211,7 @@ class CollectSensor: NSObject, URLSessionDelegate {
         }
 
         // 네트워크가 연결된 상태라면 정상적으로 REST API 호출 진행
-        guard let url = URL(string: "https://woorisys2022.iptime.org:7777/pms-server-web/app/calcLocation?userId=\(userId)&dong=\(dong)&ho=\(ho)&errorcode=\(errorcode)") else {
+        guard let url = URL(string: "https://woorisys2022.iptime.org:7777/pms-server-web/app/calcLocation?userId=\(username)&dong=\(dong)&ho=\(ho)&errorcode=\(errorcode)") else {
             print("Invalid URL")
             completion(nil, NSError(domain: "InvalidURL", code: 0, userInfo: nil))
             return
@@ -280,13 +280,10 @@ class CollectSensor: NSObject, URLSessionDelegate {
         task.resume()
     }
 
-    @objc func ErrorApi(userId: String,
-                        dong: String,
-                        ho: String,
-                        phoneInfo: String,
+    @objc func ErrorApi(phoneInfo: String,
                         completion: @escaping (Any?, NSError?) -> Void)
     {
-        guard let url = URL(string: "https://192.168.0.33:8080/pms-server-web/app/errorScript?userId=\(userId)&dong=\(dong)&ho=\(ho)") else {
+        guard let url = URL(string: "https://192.168.0.33:8080/pms-server-web/app/errorScript?userId=\(username)&dong=\(dong)&ho=\(ho)") else {
             print("Invalid URL")
             completion(nil, NSError(domain: "InvalidURL", code: 0, userInfo: nil))
             return
@@ -380,14 +377,15 @@ class CollectSensor: NSObject, URLSessionDelegate {
 
         // 저장된 요청들을 순차적으로 전송
         for requestInfo in pendingGyroRequests {
-            sendGyroApi(count: requestInfo.count, userId: requestInfo.userId) { success, error in
+            sendGyroApi(count: requestInfo.count) { success, error in
                 if success {
-                    print("임시 저장된 요청 전송 성공: count=\(requestInfo.count), userId=\(requestInfo.userId)")
+                    print("임시 저장된 요청 전송 성공: count=\(requestInfo.count), userId=\(requestInfo.username)")
                 } else {
-                    print("임시 저장된 요청 전송 실패: count=\(requestInfo.count), userId=\(requestInfo.userId), error: \(String(describing: error))")
+                    print("임시 저장된 요청 전송 실패: count=\(requestInfo.count), userId=\(requestInfo.username), error: \(String(describing: error))")
                 }
             }
         }
+
         // 전송 후 pending 배열 초기화
         pendingGyroRequests.removeAll()
     }
@@ -400,12 +398,10 @@ class CollectSensor: NSObject, URLSessionDelegate {
         for requestInfo in pendingRestApiRequests {
             // 재전송을 위해 위 RestApi 함수를 호출하거나 별도의 재전송 로직을 구현
             // 아래는 재전송의 예시 (completion 블록은 생략하거나 별도로 처리)
-            RestApi(userId: requestInfo.userId,
-                    dong: requestInfo.dong,
-                    ho: requestInfo.ho,
-                    phoneInfo: requestInfo.phoneInfo,
-                    collectSensor: CollectSensor(phoneInfo: requestInfo.phoneInfo), // 또는 기존 collectSensor 객체 사용
-                    errorcode: requestInfo.errorcode)
+            RestApi(
+                phoneInfo: requestInfo.phoneInfo,
+                collectSensor: CollectSensor(phoneInfo: requestInfo.phoneInfo), // 또는 기존 collectSensor 객체 사용
+                errorcode: requestInfo.errorcode)
             { _, error in
                 if error == nil {
                     print("저장된 RestApi 요청 전송 성공: userId=\(requestInfo.userId)")

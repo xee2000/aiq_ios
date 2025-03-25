@@ -8,6 +8,7 @@
 import NotificationCenter
 
 class RestApi: NSObject {
+    static let TAG: String = "RestApi --"
     static func openlobby(uuid: String, major: Int, minor: Int, rssi: Int, distance: Double) {
         let minorHex = String(format: "%04X", minor)
 
@@ -190,36 +191,31 @@ class RestApi: NSObject {
         return request
     }
 
-    static func getNewAccessToken(_ id: String, title: String, icon: BluetoothServiceIconType) {
+    static func getNewAccessToken(_ type: UserNotificationType, title: String, icon: BluetoothServiceIconType) {
         let userData = UserDataSingleton.shared
-
-        let userNotificationManager = UserNotificationManager()
-
+        let userNotificationManager = UserNotificationManager.shared
         let request = makeGetNewAccessTokenRequest()
 
         let task = URLSession.shared.dataTask(with: request) { data, _, error in
             guard let data = data, error == nil else {
-                print(error?.localizedDescription ?? "No data")
-                if userData.notification {
-                    userNotificationManager.addNotification(id: id, title: title, message: "플랫폼 서버에 연결할 수 없습니다.\n잠시 후 다시 시도해 보세요!", icon: icon)
-                    userNotificationManager.schedule()
-                }
+                DebugLog.log(self.TAG, items: error?.localizedDescription ?? "No data")
+                userNotificationManager.addNotification(type: type, title: title, message: "플랫폼 서버에 연결할 수 없습니다.\n잠시 후 다시 시도해 보세요!", icon: icon)
+                userNotificationManager.schedule()
+
                 return
             }
 
             let responseJSON = try? JSONSerialization.jsonObject(with: data, options: [])
             if let responseJSON = responseJSON as? [String: Any] {
-                print("new AccessToken Response = \(responseJSON)")
+                DebugLog.log(self.TAG, items: "new AccessToken Response = \(responseJSON)")
                 if responseJSON["error"] == nil {
                     // 정상적으로 AccessToken을 받아 옮.
                     if let accessToken = responseJSON["access_token"] as? String {
                         userData.authorization = "Bearer " + accessToken
                     }
                 } else {
-                    if userData.notification {
-                        userNotificationManager.addNotification(id: id, title: title, message: "인증토큰이 만료되었습니다.\n더샵 AiQ 홈 앱을 종료하시고 다시 시작해 주세요!", icon: icon)
-                        userNotificationManager.schedule()
-                    }
+                    userNotificationManager.addNotification(type: type, title: title, message: "인증토큰이 만료되었습니다.\n더샵AiQ홈 앱을 종료하시고 다시 시작해 주세요!", icon: icon)
+                    userNotificationManager.schedule()
                 }
             }
         }

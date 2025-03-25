@@ -153,13 +153,23 @@ class UserDataSingleton {
         }
     }
   
-    var _notification: Bool = true
-    var notification: Bool {
+    var _onepassNotification: Bool = true
+    var onepassNotification: Bool {
         get {
-            return _notification
+            return _onepassNotification
         }
         set {
-            _notification = newValue
+            _onepassNotification = newValue
+        }
+    }
+  
+    var _bleDoorphoneNotification: Bool = true
+    var bleDoorphoneNotification: Bool {
+        get {
+            return _bleDoorphoneNotification
+        }
+        set {
+            _bleDoorphoneNotification = newValue
         }
     }
   

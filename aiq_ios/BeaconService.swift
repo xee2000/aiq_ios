@@ -4,7 +4,6 @@ import CoreMotion
 import Foundation
 
 class BeaconService: NSObject, ObservableObject, CLLocationManagerDelegate, CBCentralManagerDelegate, CBPeripheralDelegate {
-    private var locationManager = CLLocationManager()
     let TAG: String = "PSJ_BluetoothService --"
     let AIQBEACON: String = "AiQBeacon"
 
@@ -36,8 +35,10 @@ class BeaconService: NSObject, ObservableObject, CLLocationManagerDelegate, CBCe
     var kal_Roll: Double = 0.0
     var kal_Pitch: Double = 0.0
     var kal_Yaw: Double = 0.0
+
     var LIMIT_MAX: Double = 0.5
     var LIMIT_MIN: Double = -0.5
+
     var accel_count: Int = 0
     var gyro_count: Int = 0
 
@@ -59,10 +60,6 @@ class BeaconService: NSObject, ObservableObject, CLLocationManagerDelegate, CBCe
     var Pre_3_Check: Bool = false
     var Current_Check: Bool = false
 
-    var pendingPeripheral: CBPeripheral?
-    var connectedPeripheral: CBPeripheral?
-    weak var writeCharacteristic: CBCharacteristic?
-    var doorphoneProtocol: DoorphoneProtocol?
     // Timer Count
     var counter = 0
     var AccelBeaconGet = 0
@@ -77,8 +74,16 @@ class BeaconService: NSObject, ObservableObject, CLLocationManagerDelegate, CBCe
     var mainTimer = Timer()
     var endBeaconTimer = Timer()
     var startBeaconTimer = Timer()
+    // var accelTimer = Timer()
 
+    // 2025.01.09 by 이정호 부장
+    var timer00: Timer? = nil
+    var timer30: Timer? = nil
+    // 2025.01.09 by 이정호 부장
+
+    // 0325 추가 jhlee//
     var tenminuteTimer = Timer()
+    // 0325 추가마무리 jhlee//
 
     var i: Int = 0
     var a: Int = 0
@@ -126,12 +131,6 @@ class BeaconService: NSObject, ObservableObject, CLLocationManagerDelegate, CBCe
     var PICTHCOUNT: Int = 0
     var YAWCOUNT: Int = 0
 
-    // 안면인식 도어폰의 Bluetooth UUID
-    let BLE_DOORPHONE_BLUETOOTH_UID = CBUUID(string: "0000F1AE-0000-1000-8000-00805F9B34FB")
-    let BLE_DOORPHONE_SERVICE_UUID = CBUUID(string: "ED2B4E3A-2820-492F-9507-DF165285E831")
-    let BLE_READ_CHARACTERISTIC_UUID = CBUUID(string: "ED2B4E3C-2820-492F-9507-DF165285E831")
-    let BLE_WRITE_CHARACTERISTIC_UUID = CBUUID(string: "ED2B4E3B-2820-492F-9507-DF165285E831")
-
     // accele 5로 나눌것
     var acceleDivision = 0
 
@@ -145,7 +144,7 @@ class BeaconService: NSObject, ObservableObject, CLLocationManagerDelegate, CBCe
     // 날짜 및 시간
     let date = Date()
     let dateFormatter = DateFormatter()
-    var latestRunTime: Date = .init()
+
     let motion = CMMotionManager()
 
     // Beacon Permission
@@ -153,7 +152,7 @@ class BeaconService: NSObject, ObservableObject, CLLocationManagerDelegate, CBCe
     var beaconMajor2: Bool = false // 아파트 정문
     var beaconMajor3: Bool = false // 엘레베이터
     var beaconMajor6: Bool = false // 주차장 진입로
-    var startBeaconFlag: Bool = false // 비콘감지될경우 센서시작
+
     var gyroRollArray: [Double] = []
     var gyroPitchArray: [Double] = []
     var gyroYawArray: [Double] = []
@@ -162,6 +161,7 @@ class BeaconService: NSObject, ObservableObject, CLLocationManagerDelegate, CBCe
     var stopList = [Int]()
 
     var beaconEndMajor: Int = 0
+
     // 생성자들
     let b: Beacon = .init()
     let s: Sensor = .init()
@@ -171,7 +171,7 @@ class BeaconService: NSObject, ObservableObject, CLLocationManagerDelegate, CBCe
     let accelDataC: AccelData = .init()
     let queue = QueueData()
     let Accel = AccelResultData()
-    let username = ""
+
     // Sensor data 수집하는데 나중에 서버로 보내는 작업을 할 때 어떤 사용자가 사용했는지 식별하기 위해서 전화번호가 필요함
     var collectSensor: CollectSensor!
 
@@ -188,55 +188,59 @@ class BeaconService: NSObject, ObservableObject, CLLocationManagerDelegate, CBCe
     var StopQ = QueueData.Queue<Int>()
     var AccelQ = QueueData.Queue<String>()
 
+    var locationManager: CLLocationManager!
+
     // Add by Sun,Kim 2022.11.14
     // BluetoothService Usage
-    var beaconUUID = UUID(uuidString: "") ?? UUID()
-
-    private var writeType: CBCharacteristicWriteType = .withoutResponse
+    var beaconUUID: UUID!
     var beaconRegion: CLBeaconRegion!
     var beaconServiceUsageType = [BluetoothServiceUsageType]()
-    var centralManager: CBCentralManager!
+
     // For Beacon Test
     var isRunScan: Bool = false
     var isSendBeaconToJS: Bool = false
+    var latestRunTime: Date = .init()
 
+    // For DoorPhone Smart Certification ----------------------------------------------------------
+    var centralManager: CBCentralManager!
+    // 현재 연경을 시도하고 있는 BLE Peripheral
+    var pendingPeripheral: CBPeripheral?
+    // 연결에 성공한 기기
+    var connectedPeripheral: CBPeripheral?
+    // 데이터를 보내기 위한 characteristic
+    weak var writeCharacteristic: CBCharacteristic?
+    // 데이터를 주변기기에 보내는 type을 설정. withResponse는 데이터를 보내면 이에 대한 답장이 오는 경우. withoutResponse는 반대로 데이터를 보내도 답장이 오지 않는 경우.
+    private var writeType: CBCharacteristicWriteType = .withoutResponse
+    // Bluetooth 기기와 성공적으로 연결되었고, 통신이 가능한 상태라면 return true
     var bluetoothIsReady: Bool {
         return centralManager.state == .poweredOn && connectedPeripheral != nil && writeCharacteristic != nil
     }
 
-    private let beaconIdentifier = "AiQBeacon"
+    // 컨넥션한 도어폰의 Protocol
+    var doorphoneProtocol: DoorphoneProtocol?
+    // 안면인식 도어폰의 Bluetooth UUID
+    let BLE_DOORPHONE_BLUETOOTH_UID = CBUUID(string: "0000F1AE-0000-1000-8000-00805F9B34FB")
+    let BLE_DOORPHONE_SERVICE_UUID = CBUUID(string: "ED2B4E3A-2820-492F-9507-DF165285E831")
+    let BLE_READ_CHARACTERISTIC_UUID = CBUUID(string: "ED2B4E3C-2820-492F-9507-DF165285E831")
+    let BLE_WRITE_CHARACTERISTIC_UUID = CBUUID(string: "ED2B4E3B-2820-492F-9507-DF165285E831")
 
     override init() {
         super.init()
-        let UUId = UserDefaults.standard.string(forKey: "UUID") ?? ""
-        let Username = UserDefaults.standard.string(forKey: "username") ?? ""
-        beaconUUID = UUID(uuidString: UUId) ?? UUID()
-    }
-
-    /// Always 권한 요청 (백그라운드 모니터링 위해 필요)
-    func requestAlwaysAuthorization() {
-        let status = CLLocationManager.authorizationStatus()
-        if status != .authorizedAlways {
-            locationManager.requestAlwaysAuthorization()
-        }
-    }
-
-    @objc func StartBluetoothService(userData: NSDictionary) {
-        if isRunScan {
-            CancelBluetoothService()
-        }
-        // UserDataSingleton 에 사용자 Data 를 설정함.
-        let username = UserDefaults.standard.string(forKey: "username") ?? ""
-        let dong = UserDefaults.standard.string(forKey: "dong") ?? ""
-        let ho = UserDefaults.standard.string(forKey: "ho") ?? ""
-        saveUserData(username: username, dong: dong, ho: ho)
-        setupUserData()
-
         collectSensor = CollectSensor(phoneInfo: "1234")
+    }
 
+    @objc
+    func StartBluetoothService() {
         DispatchQueue.main.async {
+            if self.isRunScan {
+                self.CancelBluetoothService()
+            }
+
+            // 0325 jhlee 사용자가 접속한 단지의 UUID를 가져오기 위한 코드 추가
             let storedUUIDString = UserDefaults.standard.string(forKey: "UUID") ?? ""
-            // 읽어온 문자열을 기반으로 UUID를 생성합니다.
+            // 0325 jhlee 사용자가 접속한 단지의 UUID를 가져오기 위한 코드 추가
+            self.setupUserData()
+
             self.beaconUUID = UUID(uuidString: storedUUIDString) ?? self.beaconUUID
             if #available(iOS 13.0, *) {
                 let beaconIdentityConstraint = CLBeaconIdentityConstraint(uuid: self.beaconUUID)
@@ -245,7 +249,8 @@ class BeaconService: NSObject, ObservableObject, CLLocationManagerDelegate, CBCe
             } else {
                 self.beaconRegion = CLBeaconRegion(proximityUUID: self.beaconUUID, identifier: self.AIQBEACON)
             }
-            // LocationManager 초기화
+
+            self.locationManager = CLLocationManager() // LocationManager 초기화
             self.locationManager.delegate = self // delegate 넣어줌
 
             self.locationManager.requestAlwaysAuthorization() // 위치 권한 받아옴.
@@ -279,71 +284,55 @@ class BeaconService: NSObject, ObservableObject, CLLocationManagerDelegate, CBCe
 
                 if [.poweredOn, .unknown].contains(self.centralManager.state) {
                     self.centralManager.scanForPeripherals(withServices: [self.BLE_DOORPHONE_BLUETOOTH_UID], options: [CBCentralManagerScanOptionAllowDuplicatesKey: true])
-//                    print("\(Date()) \(self.TAG) -------- started ble scanForPeripherals")
+                    DebugLog.log(self.TAG, items: "-------- started ble scanForPeripherals")
 
                     let peripherals = self.centralManager.retrieveConnectedPeripherals(withServices: [self.BLE_DOORPHONE_BLUETOOTH_UID])
                     for peripheral in peripherals {
                         self.centralManager.cancelPeripheralConnection(peripheral)
-//                        print("\(Date()) \(self.TAG) -------- disconnected retrieved peripheral \(String(describing: peripheral.name))")
+                        DebugLog.log(self.TAG, items: "-------- disconnected retrieved peripheral \(String(describing: peripheral.name))")
                     }
                 } else {
-//                    print("\(Date()) \(self.TAG) -------- started fail scanForPeripherals(Bluetooth not ON), \(self.centralManager.state)")
+                    DebugLog.log(self.TAG, items: "-------- started fail scanForPeripherals(Bluetooth not ON), \(self.centralManager.state)")
                 }
             }
-        }
 
-        // Notification
-        if UserDataSingleton.shared.notification {
-            let userNotificationManager = UserNotificationManager.shared
-            var serviceName = ""
+            // Notification
+            if UserDataSingleton.shared.onepassNotification {
+                let userNotificationManager = UserNotificationManager.shared
+                var serviceName = ""
 
-            if beaconServiceUsageType.contains(.BLE_ONPASS), beaconServiceUsageType.contains(.BLE_PARKING), beaconServiceUsageType.contains(.BLE_DOORPHONE) {
-                serviceName = "공동현관 자동 문열림/스마트 주차 위치 인식/도어폰 스마트 인증"
-            } else if beaconServiceUsageType.contains(.BLE_ONPASS), beaconServiceUsageType.contains(.BLE_PARKING) {
-                serviceName = "공동현관 자동 문열림/스마트 주차 위치 인식"
-            } else if beaconServiceUsageType.contains(.BLE_PARKING), beaconServiceUsageType.contains(.BLE_DOORPHONE) {
-                serviceName = "주차 위치 인식/도어폰 스마트 인증"
-            } else if beaconServiceUsageType.contains(.BLE_ONPASS), beaconServiceUsageType.contains(.BLE_DOORPHONE) {
-                serviceName = "공동현관 자동 문열림/도어폰 스마트 인증"
-            } else if beaconServiceUsageType.contains(.BLE_ONPASS) {
-                serviceName = "공동현관 자동 문열림"
-            } else if beaconServiceUsageType.contains(.BLE_PARKING) {
-                serviceName = "스마트 주차 위치"
-            } else if beaconServiceUsageType.contains(.BLE_DOORPHONE) {
-                serviceName = "도어폰 스마트 인증"
+                if self.beaconServiceUsageType.contains(.BLE_ONPASS), self.beaconServiceUsageType.contains(.BLE_PARKING), self.beaconServiceUsageType.contains(.BLE_DOORPHONE) {
+                    serviceName = "공동현관 자동 문열림/스마트 주차 위치 인식/도어폰 스마트 인증"
+                } else if self.beaconServiceUsageType.contains(.BLE_ONPASS), self.beaconServiceUsageType.contains(.BLE_PARKING) {
+                    serviceName = "공동현관 자동 문열림/스마트 주차 위치 인식"
+                } else if self.beaconServiceUsageType.contains(.BLE_PARKING), self.beaconServiceUsageType.contains(.BLE_DOORPHONE) {
+                    serviceName = "주차 위치 인식/도어폰 스마트 인증"
+                } else if self.beaconServiceUsageType.contains(.BLE_ONPASS), self.beaconServiceUsageType.contains(.BLE_DOORPHONE) {
+                    serviceName = "공동현관 자동 문열림/도어폰 스마트 인증"
+                } else if self.beaconServiceUsageType.contains(.BLE_ONPASS) {
+                    serviceName = "공동현관 자동 문열림"
+                } else if self.beaconServiceUsageType.contains(.BLE_PARKING) {
+                    serviceName = "스마트 주차 위치"
+                } else if self.beaconServiceUsageType.contains(.BLE_DOORPHONE) {
+                    serviceName = "도어폰 스마트 인증"
+                }
+                if serviceName == "" {
+                    userNotificationManager.addNotification(type: .Init, title: "[더샵AiQ홈]", message: "비콘 서비스 타입 오류 입니다.", icon: .ic_parking)
+                } else {
+                    userNotificationManager.addNotification(type: .Init, title: "[더샵AiQ홈]\(serviceName)", message: "\(serviceName)을 시작합니다.\n앱이 자동으로 시작된 경우 알림을 터치하여 주세요!", icon: .ic_parking)
+                }
+                userNotificationManager.schedule()
             }
-            if serviceName == "" {
-                userNotificationManager.addNotification(id: "Init", title: "[더샵 AiQ 홈]", message: "비콘 서비스 타입 오류 입니다.", icon: .ic_parking)
-            } else {
-                userNotificationManager.addNotification(id: "Init", title: "[더샵 AiQ 홈]\(serviceName)", message: "\(serviceName)을 시작합니다.\n앱이 자동으로 시작된 경우 알림을 터치하여 주세요!", icon: .ic_parking)
+
+            // Service Live Notify
+            if UserDataSingleton.shared.serviceLiveNotify {
+                self.startTimer00()
+                self.startTimer30()
             }
-            userNotificationManager.schedule()
-        }
 
-        // Service Live Notify
-        if UserDataSingleton.shared.serviceLiveNotify {
-//            startTimer00()
-//            startTimer30()
-        }
-
-        isRunScan = true
-        latestRunTime = Date()
-//        print("\(Date()) \(TAG) ***********(beacon service start)*************")
-    }
-
-    func setupUserData() {
-        // UserDataSingleton 에 사용자 Data 를 설정함.
-        beaconServiceUsageType.removeAll()
-
-        // UserDefaults에서 purpose 문자열 가져오기 (키 이름에 맞춰 수정)
-        let purpose = UserDefaults.standard.string(forKey: "purpose") ?? ""
-        switch purpose {
-        case "parking":
-            beaconServiceUsageType.append(.BLE_PARKING)
-        case "doorphone":
-            beaconServiceUsageType.append(.BLE_DOORPHONE)
-        default:
-            beaconServiceUsageType.append(.BLE_ONPASS)
+            self.isRunScan = true
+            self.latestRunTime = Date()
+            DebugLog.log(self.TAG, items: "***********(beacon service start)*************")
         }
     }
 
@@ -361,69 +350,35 @@ class BeaconService: NSObject, ObservableObject, CLLocationManagerDelegate, CBCe
                 self.locationManager.stopMonitoring(for: self.beaconRegion)
                 self.beaconRegion = nil
             }
-            self.locationManager = CLLocationManager()
+            self.locationManager = nil
 
             self.gyroFetchTimer.invalidate()
             self.accelFetchTimer.invalidate()
 
             if self.beaconServiceUsageType.contains(.BLE_DOORPHONE) {
-                self.pendingPeripheral = nil
-                self.connectedPeripheral = nil
-                self.writeCharacteristic = nil
-                self.doorphoneProtocol = nil
-
-                self.centralManager.stopScan()
+                self.resetCentral()
+                self.centralManager?.stopScan()
 //                print("\(Date()) \(self.TAG) -------- stoped ble scan")
             }
         }
 
         if UserDataSingleton.shared.serviceLiveNotify {
-            DispatchQueue.main.async {
-//                self.timer00?.invalidate()
-//                self.timer00 = nil
-//                print("\(Date()) \(self.TAG) ----------------- 24 Hour ServiceLiveNotify STOP!!")
-//                self.timer30?.invalidate()
-//                self.timer30 = nil
-//                print("\(Date()) \(self.TAG) ----------------- 30 Minute ServiceLiveNotify STOP!!")
-            }
+            timer00?.invalidate()
+            timer00 = nil
+            DebugLog.log(TAG, items: "----------------- 24 Hour ServiceLiveNotify STOP!!")
+            timer30?.invalidate()
+            timer30 = nil
+            DebugLog.log(TAG, items: "----------------- 30 Minute ServiceLiveNotify STOP!!")
         }
 
         isRunScan = false
-//        print("\(Date()) \(TAG) ***********(beacon service end)*************")
-    }
-
-    /// Beacon 모니터링 시작
-    func startMonitoring() {
-        guard CLLocationManager.isMonitoringAvailable(for: CLBeaconRegion.self) else {
-            print("CLBeaconRegion 모니터링을 지원하지 않는 기기입니다.")
-            return
-        }
-
-        let region = CLBeaconRegion(proximityUUID: beaconUUID, identifier: beaconIdentifier)
-        region.notifyOnEntry = true
-        region.notifyOnExit = true
-
-        locationManager.startMonitoring(for: region)
-        print("Beacon 모니터링 시작!")
-        let userData: NSDictionary = ["dong": "101", "ho": "101", "username": "101"]
-        StartBluetoothService(userData: userData)
-    }
-
-    // CBCentralManagerDelegate 필수 메서드 구현
-    func centralManagerDidUpdateState(_ central: CBCentralManager) {
-        switch central.state {
-        case .poweredOn:
-            print("Bluetooth is powered on")
-        case .poweredOff:
-            print("Bluetooth is powered off")
-        default:
-            print("Bluetooth state changed to: \(central.state)")
-        }
+        DebugLog.log(TAG, items: "***********(beacon service end)*************")
+        //    }
     }
 
     func RestartBeaconMonitoring(_ forced: Bool) {
         if !isRunScan || beaconRegion == nil || locationManager == nil {
-//            print("\(Date()) \(TAG) -------- return fail: initialized variable not corrected")
+            DebugLog.log(TAG, items: "-------- return fail: initialized variable not corrected")
             return
         }
         // 마지막 실행 시간 이후 1시간이 지나지 않았을 경우 다시 시작하지 않음
@@ -431,7 +386,7 @@ class BeaconService: NSObject, ObservableObject, CLLocationManagerDelegate, CBCe
             let current = Date()
             let minutes = (current.timeIntervalSince1970 - latestRunTime.timeIntervalSince1970) / 60
             if minutes < 60 {
-//                print("\(Date()) \(TAG) -------- restartMonitoring fail: less than an hour has passed since the last run \(minutes)")
+                DebugLog.log(TAG, items: "-------- restartMonitoring fail: less than an hour has passed since the last run \(minutes)")
                 return
             }
         }
@@ -454,12 +409,22 @@ class BeaconService: NSObject, ObservableObject, CLLocationManagerDelegate, CBCe
                 self.centralManager.stopScan()
             }
 
-            print("\(Date()) \(self.TAG) ***********(beacon monitoring stop)*************")
+            DebugLog.log(self.TAG, items: "***********(beacon monitoring stop)*************")
 
             // Sleep 50ms
             Thread.sleep(forTimeInterval: 0.05)
 
             // Start Scan Monitoring
+            let storedUUIDString = UserDefaults.standard.string(forKey: "UUID") ?? ""
+            self.beaconUUID = UUID(uuidString: storedUUIDString) ?? self.beaconUUID
+            if #available(iOS 13.0, *) {
+                let beaconIdentityConstraint = CLBeaconIdentityConstraint(uuid: self.beaconUUID)
+                self.beaconRegion = .init(beaconIdentityConstraint: beaconIdentityConstraint, identifier: self.AIQBEACON)
+                self.beaconRegion = CLBeaconRegion(uuid: self.beaconUUID, identifier: self.AIQBEACON)
+            } else {
+                self.beaconRegion = CLBeaconRegion(proximityUUID: self.beaconUUID, identifier: self.AIQBEACON)
+            }
+
             self.locationManager.startMonitoring(for: self.beaconRegion)
             if #available(iOS 13.0, *) {
                 let beaconIdentityConstraint = CLBeaconIdentityConstraint(uuid: self.beaconUUID)
@@ -474,30 +439,75 @@ class BeaconService: NSObject, ObservableObject, CLLocationManagerDelegate, CBCe
                     self.centralManager.scanForPeripherals(withServices: [self.BLE_DOORPHONE_BLUETOOTH_UID], options: [CBCentralManagerScanOptionAllowDuplicatesKey: true])
                 }
             }
-//            print("\(Date()) \(self.TAG) ***********(beacon monitoring restart)*************")
+            DebugLog.log(self.TAG, items: "***********(beacon monitoring restart)*************")
         }
 
         latestRunTime = Date()
     }
 
     func ChangeAuthorization(_ accessToken: String) {
-//        print("\(Date()) \(TAG) ChangeAuthorization() - Change AccessToken: \(accessToken)")
+        DebugLog.log(TAG, items: "ChangeAuthorization() - Change AccessToken: \(accessToken)")
         UserDataSingleton.shared.authorization = accessToken
     }
 
-    func OnepassNotification(_ value: Bool) {
-//        print("\(Date()) \(TAG) OnepassNotification: \(value)")
-        UserDataSingleton.shared.notification = value
-    }
+    // 0325 jhlee 단독앱인경우 해당 함수가 의미가 없다 판단되어 주석처리 진행
+//    func IsRunningSevice(_ resolve: RCTPromiseResolveBlock, rejecter reject: RCTPromiseRejectBlock) {
+//        if locationManager == nil {
+//            resolve(["result", false])
+//            return
+//        }
+//
+//        let aiqBeacon = locationManager.monitoredRegions.filter {
+//            $0.identifier == self.AIQBEACON
+//        }
+//        //        DebugLog.log(TAG, items: "IsRunningService: \(isRunScan), \(aiqBeacon.count)")
+//        resolve(["result": isRunScan && aiqBeacon.count > 0])
+//    }
+
+//    @objc(IsRunningService:rejecter:)
+//    func IsRunningSevice(_ resolve: RCTPromiseResolveBlock, rejecter reject: RCTPromiseRejectBlock) {
+//      if locationManager == nil {
+//        resolve(["result", false])
+//        return
+//      }
+//
+//      let aiqBeacon = locationManager.monitoredRegions.filter {
+//        $0.identifier == self.AIQBEACON
+//      }
+//      DebugLog.log(self.TAG, items: "IsRunningService: \(isRunScan), \(aiqBeacon.count)")
+//      resolve(["result": isRunScan && aiqBeacon.count > 0])
+//    }
+
+    // -------------------------------------------------------------------------------------
+//    @objc(SendDetectBeaconToJS:)
+//    func SendDetectBeaconToJS(_ value: Bool) {
+//      DebugLog.log(self.TAG, items: "SendDetectBeaconToJS: \(value)")
+//      isSendBeaconToJS = value
+//    }
+//
+//    // --------------------------------------------------------------------------------------
+//    @objc(OnepassNotification:)
+//    func OnepassNotification(_ value: Bool) {
+//      DebugLog.log(self.TAG, items: "OnepassNotification: \(value)")
+//      UserDataSingleton.shared.onepassNotification = value
+//    }
+//
+//    // --------------------------------------------------------------------------------------
+//    @objc(BleDoorphoneNotification:)
+//    func BleDoorphoneNotification(_ value: Bool) {
+//      DebugLog.log(self.TAG, items: "BleDoorphoneNotification: \(value)")
+//      UserDataSingleton.shared.bleDoorphoneNotification = value
+//    }
+    // 0325 jhlee 단독앱인경우 해당 함수가 의미가 없다 판단되어 주석처리 진행
 
     func locationManager(_ manager: CLLocationManager, didChangeAuthorization status: CLAuthorizationStatus) {
-//        print("\(Date()) \(TAG) didChangeAuthorization -> \(status)")
-        if status == .authorizedAlways || status == .authorizedWhenInUse {
-//            print("\(Date()) \(TAG) didChangeAuthorization -> .authorizedAlways")
-            RestartBeaconMonitoring(true)
-        } else {
-//            print("\(Date()) \(TAG) didChangeAuthorization -> \(status)")
-        }
+        DebugLog.log(TAG, items: "didChangeAuthorization -> \(status)")
+        //  if status == .authorizedAlways || status == .authorizedWhenInUse {
+        //    DebugLog.log(self.TAG, items: "didChangeAuthorization -> .authorizedAlways")
+        //    RestartBeaconMonitoring(true)
+        //  } else {
+        //    DebugLog.log(self.TAG, items: "didChangeAuthorization -> \(status)")
+        //  }
     }
 
     func locationManager(_ manager: CLLocationManager, didEnterRegion region: CLRegion) {
@@ -513,13 +523,13 @@ class BeaconService: NSObject, ObservableObject, CLLocationManagerDelegate, CBCe
                 manager.startRangingBeacons(in: beaconRegion)
             }
             manager.showsBackgroundLocationIndicator = true
-//            print("\(Date()) \(TAG) start ranging beacons...")
+            DebugLog.log(TAG, items: "start ranging beacons...")
         }
     }
 
     func locationManager(_ manager: CLLocationManager, didExitRegion region: CLRegion) {
         // RestApi.sendErrorData(body: ["message": "didExitRegion"])
-//        print("\(Date()) \(TAG) didExitRegion -> \(region.identifier)")
+        DebugLog.log(TAG, items: "didExitRegion -> \(region.identifier)")
         if beaconRegion != nil {
             if #available(iOS 13.0, *) {
                 let beaconIdentityConstraint = CLBeaconIdentityConstraint(uuid: self.beaconUUID)
@@ -528,14 +538,13 @@ class BeaconService: NSObject, ObservableObject, CLLocationManagerDelegate, CBCe
                 manager.stopRangingBeacons(in: beaconRegion)
             }
             manager.showsBackgroundLocationIndicator = false
-//            print("\(Date()) \(TAG) stop ranging beacons...")
+            DebugLog.log(TAG, items: "stop ranging beacons...")
             accelFetchTimer.invalidate()
             gyroFetchTimer.invalidate()
 
             // NotifyFlag들을 Reset함.
             UserNotificationManager.shared.resetNotifyFlag()
-            let username = UserDefaults.standard.string(forKey: "username") ?? ""
-            collectSensor.sendGyroApi(count: 4444, userId: username, completion: { _, _ in })
+            collectSensor.sendGyroApi(count: 4444, completion: { _, _ in })
             // ParkingComplete ....
             serviceComplete()
             resetData()
@@ -543,13 +552,12 @@ class BeaconService: NSObject, ObservableObject, CLLocationManagerDelegate, CBCe
     }
 
     func locationManager(_ manager: CLLocationManager, didStartMonitoringFor region: CLRegion) {
-//        print("\(Date()) \(TAG) didStartMonitoringFor, region: \(region.identifier)")
+        DebugLog.log(TAG, items: "didStartMonitoringFor, region: \(region.identifier)")
     }
 
     func locationManager(_ manager: CLLocationManager, didDetermineState state: CLRegionState, for region: CLRegion) {
         if state == .inside {
-            // RestApi.sendErrorData(body: ["message": "didDetermineState -> .inside, region: \(region.identifier), \(self.beaconUUID.uuidString)"])
-//            print("\(Date()) \(TAG) didDetermineState -> .inside, region: \(region.identifier)")
+            DebugLog.log(TAG, items: "didDetermineState -> .inside, region: \(region.identifier)")
             if beaconRegion != nil {
                 if #available(iOS 13.0, *) {
                     let beaconIdentityConstraint = CLBeaconIdentityConstraint(uuid: self.beaconUUID)
@@ -564,7 +572,7 @@ class BeaconService: NSObject, ObservableObject, CLLocationManagerDelegate, CBCe
             manager.showsBackgroundLocationIndicator = true
         } else if state == .outside {
             // RestApi.sendErrorData(body: ["message": "didDetermineState -> .outside, region: \(region.identifier)"])
-//            print("\(Date()) \(TAG) didDetermineState -> .outside, region: \(region.identifier)")
+            DebugLog.log(TAG, items: "didDetermineState -> .outside, region: \(region.identifier)")
             if beaconRegion != nil {
                 if #available(iOS 13.0, *) {
                     let beaconIdentityConstraint = CLBeaconIdentityConstraint(uuid: self.beaconUUID)
@@ -580,7 +588,7 @@ class BeaconService: NSObject, ObservableObject, CLLocationManagerDelegate, CBCe
                 UserNotificationManager.shared.resetNotifyFlag()
             }
         } else if state == .unknown {
-//            print("\(Date()) \(TAG) locationManager() - Now unknown of Region")
+            DebugLog.log(TAG, items: "locationManager() - Now unknown of Region")
         }
     }
 
@@ -589,13 +597,14 @@ class BeaconService: NSObject, ObservableObject, CLLocationManagerDelegate, CBCe
         if beacons.count <= 0 {
             return
         }
-
+        print("data : ", beaconServiceUsageType)
         // 시작하는 서비스에 주치위치 인식 서비스가 포함되어 있을 경우 Timer 실행
         if beaconServiceUsageType.contains(.BLE_PARKING) {
             // 이동 주차 예상
             // if beacons.count >= 30 && carDraftCheck == true && carDraftStartCheck == true && carDraftRssiCheck == true && startServiceFlag_W == true {
             if beacons.count >= 1, startServiceFlag_W == true {
                 startServiceFlag_W = false
+                // carDraftCheck = false
                 startSecond()
                 // } else if carDraftCheck == true && carDraftStartCheck == false {
                 //   carDraftCheck = false
@@ -614,7 +623,7 @@ class BeaconService: NSObject, ObservableObject, CLLocationManagerDelegate, CBCe
             let minor = Int(truncating: beacons[i].minor)
             let rssi = beacons[i].rssi
             let distance = beacons[i].accuracy
-//            print("\(Date()) \(TAG) 감지된 비콘 UUID :  \(uuid ?? "unknown") \(String(format: "%04X", major)) \(String(format: "%04X", minor)) \(rssi) \(beacons[i].proximity) \(distance)")
+            DebugLog.log(TAG, items: "Detect Beacon \(uuid ?? "unknown") \(String(format: "%04X", major)) \(String(format: "%04X", minor)) \(rssi) \(beacons[i].proximity) \(distance)")
 
             if rssi > -75 || rssi != 0 {
                 carDraftRssiCheck = true
@@ -632,7 +641,6 @@ class BeaconService: NSObject, ObservableObject, CLLocationManagerDelegate, CBCe
                 if beacons[i].rssi == 0 {
                     return
                 }
-                print("============================ \(AccelBeaconPermission) -- \(ResultCount)")
                 if AccelBeaconPermission == true {
                     if minor > 32768 {
                         ModifiMinor = minor - 32768
@@ -657,6 +665,7 @@ class BeaconService: NSObject, ObservableObject, CLLocationManagerDelegate, CBCe
                         accelData.rssi = "\(rssi)"
                         accelData.delay = "\(counter)"
                         accelData.count = "1"
+                        updateDelayList(&accelData.delayList, newEntry: "\(rssi)_\(counter)")
                         // 0109 jhlee 수정진행 delayList추가
                         accelData.delayList.append("\(rssi)_\(counter)")
                         // 0109 jhlee 수정끝 delayList추가
@@ -670,38 +679,62 @@ class BeaconService: NSObject, ObservableObject, CLLocationManagerDelegate, CBCe
                         let value = Int(accelData.count)! + 1
 
                         if Int(accelData.rssi)! > beacons[i].rssi {
-                            let accelData2 = AccelData()
-                            accelData2.id = accelData.id
-                            // 2024.10.15 by 이정호 차장
-                            accelData2.rssi = accelData.rssi
-                            // accelData2.rssi = ("\(beacons[i].rssi)")
-                            accelData2.delay = accelData.delay
-                            accelData2.delayList = accelData.delayList
-                            accelData2.count = "\(value)"
-                            // 2025.01.09 by 이정호 차장 수정진행 delayList append추가
-                            accelData2.delayList.append("\(accelData.rssi)_\(accelData.delay)")
-                            // 2025.01.09 by 이정호 차장 수정진행 delayList append추가
+                            accelData.count = "\(value)"
+                            updateDelayList(&accelData.delayList, newEntry: "\(accelData.rssi)_\(accelData.delay)")
 
-                            acb.AccelBeaconDic.updateValue(accelData2, forKey: "\(hexString)")
                         } else {
-                            let accelData2 = AccelData()
-                            accelData2.id = "\(hexString)"
-                            // 2024.10.15 by 이정호 차장
-                            accelData2.rssi = "\(beacons[i].rssi)"
-                            // accelData2.rssi = accelData.rssi
-                            accelData2.delay = "\(counter)"
-                            accelData2.count = "\(value)"
-                            // 2025.01.09 by 이정호 차장 수정진행 delayList append추가
-                            accelData2.delayList = accelData.delayList
-                            // 2025.01.09 by 이정호 차장 수정진행 delayList append추가
-
-                            accelData2.delayList.append("\(beacons[i].rssi)_\(counter)")
-
-                            acb.AccelBeaconDic.updateValue(accelData2, forKey: "\(hexString)")
+                            // 그렇지 않을경우 rssi, delay, count만 업데이트
+                            accelData.rssi = "\(beacons[i].rssi)"
+                            accelData.delay = "\(counter)"
+                            accelData.count = "\(value)"
+                            updateDelayList(&accelData.delayList, newEntry: "\(accelData.rssi)_\(accelData.delay)")
                         }
+                        acb.AccelBeaconDic["\(hexString)"] = accelData
                     }
                 }
             }
+
+            // ---------------------------------------------------------------------------------
+            func updateDelayList(_ list: inout [String], newEntry: String) {
+                let components = newEntry.split(separator: "_", maxSplits: 1)
+                guard components.count == 2,
+                      let newRssi = Double(components[0]),
+                      let newDelay = Double(components[1])
+                else {
+                    list.append(newEntry)
+                    list.sort { $0 < $1 } // 기본 문자열 비교 정렬
+                    return
+                }
+
+                if let index = list.firstIndex(where: { entry in
+                    // 기존 항목의 delay가 같은지 비교
+                    let parts = entry.split(separator: "_", maxSplits: 1)
+                    if parts.count == 2, let delay = Double(parts[1]) {
+                        return delay == newDelay
+                    }
+                    return false
+                }) {
+                    // 동일 delay가 있으면 rssi를 비교 (더 높은 신호일 때만 교체)
+                    let parts = list[index].split(separator: "_", maxSplits: 1)
+                    if parts.count == 2, let storedRssi = Double(parts[0]), newRssi > storedRssi {
+                        list[index] = newEntry
+                    }
+                } else {
+                    // 동일 delay가 없으면 새 항목 추가
+                    list.append(newEntry)
+                }
+
+                // delay 기준 오름차순 정렬 (delay가 Double 형식인 경우)
+                list.sort { entry1, entry2 in
+                    let parts1 = entry1.split(separator: "_", maxSplits: 1)
+                    let parts2 = entry2.split(separator: "_", maxSplits: 1)
+                    if let delay1 = Double(parts1[1]), let delay2 = Double(parts2[1]) {
+                        return delay1 < delay2
+                    }
+                    return entry1 < entry2
+                }
+            }
+            // 2025.02.21 수정 끝
 
             // ---------------------------------------------------------------------------------
             func appFunctionBeacon() {
@@ -751,25 +784,22 @@ class BeaconService: NSObject, ObservableObject, CLLocationManagerDelegate, CBCe
                         if beaconMajor1 == false, beaconMajor3 == false {
                             RestApi.sendParkingGateInformation(major: major, minor: minor)
 
-//                            print("\(Date()) \(TAG) locationManager() -일반주차 완료 1 majorNumber : \(major) / beacon권한 beaconMajor1 = \(beaconMajor1) : beaconMajor3 = \(beaconMajor3)")
+                            DebugLog.log(TAG, items: "locationManager() -일반주차 완료 1 majorNumber : \(major) / beacon권한 beaconMajor1 = \(beaconMajor1) : beaconMajor3 = \(beaconMajor3)")
 
                             // 6번, 2번 비컨이 없는 현장들이 존재하여 1, 3, 4, 5번 비컨들만으로 주차 위치 서버스를 제공해야 됨
                             // 6번에서 파싱하던 데이터들을 1번 비컨으로 변경
-                            collectSensor.inputDate = "2025-02-12 09:47:28"
-                            collectSensor.paringDate = ""
-
-                            collectSensor.addStartTime()
+                            collectSensor.paringDate = "non-paring"
                             collectSensor.addParingState()
 
                             beaconMajor1 = true
                         }
                     }
                     if counterFlag == false {
-//                        print("\(Date()) \(TAG) locationManager() - 전체 타이머 상태 2 : \(counterFlag) | \(startTime)")
+                        DebugLog.log(TAG, items: "locationManager() - 전체 타이머 상태 2 : \(counterFlag) | \(startTime)")
                         if beaconMajor1 == false, beaconMajor3 == true {
-                            RestApi.sendParkingGateInformation(major: major, minor: minor)
+                            collectSensor.sendGyroApi(count: major, completion: { _, _ in })
 
-//                            print("\(Date()) \(TAG) locationManager() - 이동주차 시작 2 Beacon : \(major) / 권한 beaconMajor1 = \(beaconMajor1) : beaconMajor3 = \(beaconMajor3)")
+                            DebugLog.log(TAG, items: "locationManager() - 이동주차 시작 2 Beacon : \(major) / 권한 beaconMajor1 = \(beaconMajor1) : beaconMajor3 = \(beaconMajor3)")
 
                             beaconMajor1 = true
                             beaconMajor3 = false
@@ -778,8 +808,6 @@ class BeaconService: NSObject, ObservableObject, CLLocationManagerDelegate, CBCe
                             // Android에서 Paring 상태에선 비컨을 잘 못받기 때문에 상태 확인하는 것인데 IOS에서는 사용 안해서 [non]으로 고정시켜서 보냄
                             collectSensor.paringDate = "non-paring"
                             collectSensor.inputDate = "move_" + startTime
-
-                            collectSensor.addStartTime()
                             collectSensor.addParingState()
 
                             // accelTimer.invalidate()
@@ -799,7 +827,7 @@ class BeaconService: NSObject, ObservableObject, CLLocationManagerDelegate, CBCe
 
             case 3:
                 if beaconServiceUsageType.contains(.BLE_PARKING) {
-//                    print("\(Date()) \(TAG) locationManager() - Time: \(startTime), Major: \(major), Minor: \(minor), RSSI: \(rssi)")
+                    DebugLog.log(TAG, items: "locationManager() - Time: \(startTime), Major: \(major), Minor: \(minor), RSSI: \(rssi)")
                     if endBeaconTimerCheck == true {
                         stopList.append(major)
                     }
@@ -807,9 +835,9 @@ class BeaconService: NSObject, ObservableObject, CLLocationManagerDelegate, CBCe
                     StopQ.push(value: major)
 
                     if counterFlag == true {
-//                        print("\(Date()) \(TAG) locationManager() - 전체 타이머 상태 3 : \(counterFlag)")
+                        DebugLog.log(TAG, items: "locationManager() - 전체 타이머 상태 3 : \(counterFlag)")
                         if beaconMajor1 == true, beaconMajor3 == false {
-//                            print("\(Date()) \(TAG) locationManager() - 일반주차 완료 2 Beacon : \(major) / 권한 beaconMajor1 = \(beaconMajor1) : beaconMajor3 = \(beaconMajor3)")
+                            DebugLog.log(TAG, items: "locationManager() - 일반주차 완료 2 Beacon : \(major) / 권한 beaconMajor1 = \(beaconMajor1) : beaconMajor3 = \(beaconMajor3)")
 
                             // RestApi.sendParkingGateInformation(major: major, minor: minor, eventEmitter: self)
 
@@ -821,9 +849,9 @@ class BeaconService: NSObject, ObservableObject, CLLocationManagerDelegate, CBCe
                     }
 
                     if counterFlag == false {
-//                        print("\(Date()) \(TAG) 전체 타이머 상태 : \(counterFlag)")
+                        DebugLog.log(TAG, items: "전체 타이머 상태 : \(counterFlag)")
                         if beaconMajor1 == false, beaconMajor3 == false {
-//                            print("\(Date()) \(TAG) locationManager() - 이동주차 시작 1 Beacon : \(major) / 권한 beaconMajor1 = \(beaconMajor1) : beaconMajor3 = \(beaconMajor3)")
+                            DebugLog.log(TAG, items: "locationManager() - 이동주차 시작 1 Beacon : \(major) / 권한 beaconMajor1 = \(beaconMajor1) : beaconMajor3 = \(beaconMajor3)")
 
                             // RestApi.sendParkingGateInformation(major: major, minor: minor, eventEmitter: self)
 
@@ -837,23 +865,13 @@ class BeaconService: NSObject, ObservableObject, CLLocationManagerDelegate, CBCe
 
             case 4:
                 if beaconServiceUsageType.contains(.BLE_PARKING) {
-//                    print("\(Date()) \(TAG) locationManager() - Time: \(startTime), Major: \(major), Minor: \(minor), RSSI: \(rssi)")
-                    let date = Date()
-                    let dateFormatter = DateFormatter()
-                    dateFormatter.dateFormat = "yyyy-MM-dd HH:mm:ss"
-                    collectSensor.inputDate = dateFormatter.string(from: date)
-
-                    collectSensor.paringDate = "non-paring"
-
-                    collectSensor.addStartTime()
-                    collectSensor.addParingState()
-
+                    DebugLog.log(TAG, items: "locationManager() - Time: \(startTime), Major: \(major), Minor: \(minor), RSSI: \(rssi)")
                     appFunctionAccel()
                 }
 
             case 5:
                 if beaconServiceUsageType.contains(.BLE_PARKING) {
-//                    print("\(Date()) \(TAG) locationManager() - Time: \(startTime), Major: \(major), Minor: \(minor), RSSI: \(rssi)")
+                    DebugLog.log(TAG, items: "locationManager() - Time: \(startTime), Major: \(major), Minor: \(minor), RSSI: \(rssi)")
                     appFunctionAccel()
                     appFunctionBeacon()
                 }
@@ -911,6 +929,10 @@ class BeaconService: NSObject, ObservableObject, CLLocationManagerDelegate, CBCe
 
         startServiceFlag_W = true
 
+        // 2025.02.28 jhlee gyroSaveCount 0으로 초기화 수정중
+        gyroSaveCount = 0
+        // 2025.02.28 jhlee gyroSaveCount 0으로 초기화 수정끝
+
         // Timer 종료
         mainTimer.invalidate()
         // accelTimer.invalidate()
@@ -922,30 +944,74 @@ class BeaconService: NSObject, ObservableObject, CLLocationManagerDelegate, CBCe
                 sensorFlag = true
                 // 자이로, 엑셀이 센서가 동작함
             }
-//            print("counter : ", counter)
-            // Timer count 증가
+
             counter += 1
-            let username = UserDefaults.standard.string(forKey: "username") ?? ""
-            collectSensor.sendGyroApi(count: GlobalManager.shared.sharedValue + 8888, userId: username, completion: { _, _ in })
+
             // 15분이 지나면 Beacon기능 제외 모든기능 정지 후 서버로 데이터 보냄
             if counter == 900 {
-                parkingTime = dateFormatter.string(from: date)
-
-                collectSensor.inputDate = startTime
                 collectSensor.paringDate = "non-paring"
 
-                collectSensor.addStartTime()
+                collectSensor.addStartTime(startTime)
                 collectSensor.addParingState()
 
                 // create post request 서버로 보내는 작업
 
-                collectSensor.sendGyroApi(count: 900, userId: username, completion: { _, _ in })
+                collectSensor.sendGyroApi(count: 900, completion: { _, _ in })
                 serviceComplete()
             }
         }
 
         accelTimerFunction()
     }
+
+    @objc
+    func startTimer00() {
+        DispatchQueue.main.async {
+            let now = Date()
+            var calendar = Calendar.current
+            calendar.timeZone = TimeZone.current
+            let midnight = calendar.startOfDay(for: now).addingTimeInterval(86400) // 다음 자정
+
+            let interval = midnight.timeIntervalSince(now)
+
+            self.timer00?.invalidate()
+            self.timer00 = nil
+            // self.timer00 = Timer.scheduledTimer(timeInterval: interval, target: self, selector: #selector(self.executeTask24), userInfo: nil, repeats: false)
+            self.timer00 = Timer.scheduledTimer(withTimeInterval: interval, repeats: false) { [weak self] _ in
+                self?.executeTask24()
+            }
+            // RunLoop.main.add(timer00!, forMode: .common)
+            DebugLog.log(self.TAG, items: "----------------- 24 Hour ServiceLiveNotify START!! \(interval)")
+        }
+    }
+
+    @objc
+    func startTimer30() {
+        DispatchQueue.main.async {
+            self.timer30?.invalidate()
+            self.timer30 = nil
+            // self.timer30 = Timer.scheduledTimer(timeInterval: 10, target: self, selector: #selector(self.executeTask30), userInfo: nil, repeats: true)
+            self.timer30 = Timer.scheduledTimer(withTimeInterval: 1800, repeats: true) { [weak self] _ in
+                self?.executeTask30() // 30분마다 작동할 함수
+            }
+            // RunLoop.main.add(timer30!, forMode: .common)
+            DebugLog.log(self.TAG, items: "----------------- 30 Minute ServiceLiveNotify START!!")
+        }
+    }
+
+    // 정각마다 실행 함수
+    @objc
+    private func executeTask24() {
+        collectSensor.sendGyroApi(count: 2424, completion: { _, _ in })
+    }
+
+    // 30분마다 실행 함수
+    @objc
+    private func executeTask30() {
+        collectSensor.sendGyroApi(count: 3030, completion: { _, _ in })
+    }
+
+    // 2025.01.09 by 수정끝 이정호 부장 자정마다 timer진행
 
     func accelTimerFunction() {
         accelCount += 1
@@ -1017,7 +1083,7 @@ class BeaconService: NSObject, ObservableObject, CLLocationManagerDelegate, CBCe
                     endBeaconTimer = Timer.scheduledTimer(timeInterval: 1, target: self, selector: #selector(endCheckFunction), userInfo: nil, repeats: true)
                 } else {
                     if beaconEndMajor == 3 {
-                        collectSensor.sendGyroApi(count: 3333, userId: username, completion: { _, _ in })
+                        collectSensor.sendGyroApi(count: 3333, completion: { _, _ in })
                         serviceComplete()
                     } else if beaconEndMajor == 1 {
                         print("\(Date()) \(TAG) endCheckFunction() - 종료 안하고 다시 로비로 나옴")
@@ -1033,7 +1099,7 @@ class BeaconService: NSObject, ObservableObject, CLLocationManagerDelegate, CBCe
         if startBeaconTimerCheck == true {
             startCheckCount += 1
 
-            print("\(Date()) \(TAG) startCheckFunction() - startCheckCount : \(startCheckCount)")
+            DebugLog.log(TAG, items: "startCheckFunction() - startCheckCount : \(startCheckCount)")
 
             if startCheckCount == 900 {
                 // 다되면 타이머를 멈춰야 할까??
@@ -1063,27 +1129,17 @@ class BeaconService: NSObject, ObservableObject, CLLocationManagerDelegate, CBCe
         // create post request 서버로 보내는 작업
 
         if counter >= 10 {
-            let username = UserDefaults.standard.string(forKey: "username") ?? ""
-            let dong = UserDefaults.standard.string(forKey: "dong") ?? ""
-            let ho = UserDefaults.standard.string(forKey: "ho") ?? ""
-
-            collectSensor.RestApi(userId: username,
-                                  dong: dong,
-                                  ho: ho,
-                                  phoneInfo: "1234",
+            collectSensor.addStartTime(startTime)
+            collectSensor.RestApi(phoneInfo: "Test",
                                   collectSensor: collectSensor,
                                   errorcode: GlobalManager.shared.sharedValue)
             { response, error in
                 if let response = response {
                     print("API 호출 성공: \(response)")
-                   
+
                     // 에러 파일이 존재하는 경우에만 ErrorApi 호출
                     if JsonFileSave.isFileJsonExists() {
-                        self.collectSensor.ErrorApi(userId: username,
-                                                    dong: dong,
-                                                    ho: ho,
-                                                    phoneInfo: "1234")
-                        { response, error in
+                        self.collectSensor.ErrorApi(phoneInfo: "1234") { response, error in
                             if let response = response {
                                 print("Error API 호출 성공: \(response)")
                                 JsonFileSave.deleteJson(filename: "file")
@@ -1197,9 +1253,6 @@ class BeaconService: NSObject, ObservableObject, CLLocationManagerDelegate, CBCe
                                                cumulativeRollAverage = cumulativeRoll / Double(self.gyroRollArray.count - 1)
                                                cumulativePitchAverage = cumulativePitch / Double(self.gyroPitchArray.count - 1)
                                                cumulativeYawAverage = cumulativeYaw / Double(self.gyroYawArray.count - 1)
-                                               print("x: ", cumulativeRollAverage)
-                                               print("y: ", cumulativePitchAverage)
-                                               print("z: ", cumulativeYawAverage)
                                                GyroDataManager.shared.updateGyroData(
                                                    roll: cumulativeRollAverage,
                                                    pitch: cumulativePitchAverage,
@@ -1399,8 +1452,6 @@ class BeaconService: NSObject, ObservableObject, CLLocationManagerDelegate, CBCe
         mainTimer = Timer.scheduledTimer(timeInterval: 1, target: self, selector: #selector(timerFunction), userInfo: nil, repeats: true)
         // accelTimer = Timer.scheduledTimer(timeInterval: 1, target: self, selector: #selector(accelTimerFunction), userInfo: nil, repeats: true)
 
-        // 엑셀 센서와 자이로 센서가 중간에 죽는 현상을 방지하기 위해 추가
-        tenminuteTimer = Timer.scheduledTimer(timeInterval: 60, target: self, selector: #selector(tenminuteFunction), userInfo: nil, repeats: true)
         AccelStart()
         GyroStart()
 
@@ -1408,21 +1459,104 @@ class BeaconService: NSObject, ObservableObject, CLLocationManagerDelegate, CBCe
         let dateFormatter = DateFormatter()
         dateFormatter.dateFormat = "yyyy-MM-dd HH:mm:ss"
         startTime = dateFormatter.string(from: date)
-        // 0227 Accel Start!!! 추가 jhlee
-        let username = UserDefaults.standard.string(forKey: "username") ?? ""
-        collectSensor.sendGyroApi(count: 12345, userId: username, completion: { _, _ in })
+
+        DebugLog.log(TAG, items: "startSecond() - App Start 주차 시스템 시작 !!")
+
+        // 2025.02.27 jhlee AccelStart 로그기록 수정중
+        collectSensor.sendGyroApi(count: 12345, completion: { _, _ in })
+        // 2025.02.27 jhlee AccelStart 로그기록 수정끝
+
+        // 2025.03.25 jhlee 시작시 알림띄우기 위한 단독앱 포그라운드
         BeaconServiceFore.StartingService()
-        print("\(Date()) \(TAG) startSecond() - App Start 주차 시스템 시작 !!")
+        // 2025.03.25 jhlee 시작시 알림띄우기 위한 단독앱 포그라운드 수정끝
     }
 
-    @objc
-    func tenminuteFunction() {
-        let username = UserDefaults.standard.string(forKey: "username") ?? ""
-        collectSensor.sendGyroApi(count: 1010, userId: username, completion: { _, _ in })
+    func setupUserData() {
+        // UserDataSingleton 에 사용자 Data 를 설정함.
+        beaconServiceUsageType.removeAll()
+
+        // UserDefaults에서 purpose 문자열 가져오기 (키 이름에 맞춰 수정)
+        let purpose = UserDefaults.standard.string(forKey: "purpose") ?? ""
+        switch purpose {
+        case "parking":
+            beaconServiceUsageType.append(.BLE_PARKING)
+        case "doorphone":
+            beaconServiceUsageType.append(.BLE_DOORPHONE)
+        default:
+            beaconServiceUsageType.append(.BLE_ONPASS)
+        }
+    }
+
+    // CBCentralManagerDelegate 필수 메서드 구현
+    func centralManagerDidUpdateState(_ central: CBCentralManager) {
+        switch central.state {
+        case .unknown:
+            DebugLog.log(TAG, items: "centralManagerDidUpdateState: unknown")
+        case .resetting:
+            DebugLog.log(TAG, items: "centralManagerDidUpdateState: resetting")
+        case .unsupported:
+            DebugLog.log(TAG, items: "centralManagerDidUpdateState: unsupported")
+        case .unauthorized:
+            DebugLog.log(TAG, items: "centralManagerDidUpdateState: unauthorized")
+        case .poweredOff:
+            DebugLog.log(TAG, items: "centralManagerDidUpdateState: power OFF")
+        case .poweredOn:
+            DebugLog.log(TAG, items: "centralManagerDidUpdateState: power ON")
+            if UserDataSingleton.shared.purpose.contains(.BLE_DOORPHONE) {
+                guard central.isScanning == false else { return }
+                startScan()
+            }
+            return
+        @unknown default:
+            fatalError()
+        }
+
+        if beaconServiceUsageType.contains(.BLE_DOORPHONE) {
+            centralManager?.stopScan()
+            DebugLog.log(TAG, items: "-------- stoped ble scan")
+        }
+
+        resetData()
+    }
+
+    func connectToPeripheral(_ peripheral: CBPeripheral) {
+        // 연결 실패에 대비하여 현재 연결 중인 기기를 저장
+        pendingPeripheral = peripheral
+        centralManager?.connect(peripheral, options: nil)
+    }
+
+    func centralManager(_ central: CBCentralManager, didDiscover peripheral: CBPeripheral, advertisementData: [String: Any], rssi RSSI: NSNumber) {
+        if peripheral.state != .disconnected {
+            return
+        }
+
+        // Device의 Name을 가져옮(by 김성호, 2024.09.26) ------------>
+        var advName = peripheral.name
+        if advName == nil {
+            advName = peripheral.identifier.uuidString
+        }
+
+        for data in advertisementData {
+            if data.key == "kCBAdvDataLocalName" {
+                advName = data.value as? String
+            }
+        }
+        // <---------------------------------------------------------
+
+        // 기기가 검색될 때 마다 필요한 코드를 작성
+        if advName == UserDataSingleton.shared.advName {
+            DebugLog.log(TAG, items: "centralManager(didDiscover) --------- \(peripheral.identifier)")
+            // Connect to Doorphone
+            connectToPeripheral(peripheral)
+        }
     }
 
     func centralManager(_ central: CBCentralManager, didConnect peripheral: CBPeripheral) {
-        print("\(Date()) \(TAG) centralManager(didConnect) --------- \(peripheral)")
+        DebugLog.log(TAG, items: "centralManager(didConnect) --------- \(peripheral.identifier)")
+
+        // Stop scanning once we've connected
+        centralManager.stopScan()
+        DebugLog.log(TAG, items: "-------- ended ble scanForPeripherals")
 
         peripheral.delegate = self
         pendingPeripheral = nil
@@ -1434,33 +1568,44 @@ class BeaconService: NSObject, ObservableObject, CLLocationManagerDelegate, CBCe
     }
 
     func centralManager(_ cental: CBCentralManager, didDisconnectPeripheral peripheral: CBPeripheral, error: (any Error)?) {
-        // Disconnect peripheral
-        if connectedPeripheral?.identifier.uuidString == peripheral.identifier.uuidString {
-            print("\(Date()) \(TAG) centralManager(didDisconnectPeripheral) --------- \(peripheral)")
-            pendingPeripheral = nil
-            connectedPeripheral = nil
-            doorphoneProtocol = nil
+        if let error = error {
+            DebugLog.log(TAG, items: "centralManager(didDisconnectPeripheral) ERROR --------- \(error.localizedDescription)")
         }
+        DebugLog.log(TAG, items: "centralManager(didDisconnectPeripheral) --------- \(peripheral.identifier)")
+
+        // Reset the state and start scanning
+        resetCentral()
+        startScan()
     }
 
     func centralManager(_ central: CBCentralManager, didFailToConnect peripheral: CBPeripheral, error: (any Error)?) {
         // Fail Connection
-        print("\(Date()) \(TAG) centralManager(didFailToConnect) --------- \(peripheral)")
-        pendingPeripheral = nil
-        connectedPeripheral = nil
-        writeCharacteristic = nil
-        doorphoneProtocol = nil
+        if let error = error {
+            DebugLog.log(TAG, items: "centralManager(didFailToConnect) ERROR --------- \(error.localizedDescription)")
+        }
+
+        // Reset the state and start scanning again
+        resetCentral()
+        startScan()
     }
 
     func centralManager(_ central: CBCentralManager, willRestoreState dict: [String: Any]) {
+        DebugLog.log(TAG, items: "centralManager(willRestoreState) ---------")
+
         let identifiyKey = dict[CBCentralManagerOptionRestoreIdentifierKey]
         if identifiyKey != nil {
-            print("\(Date()) \(TAG) centralManager(willRestoreState) --------- \(identifiyKey!)")
+            DebugLog.log(TAG, items: "centralManager(willRestoreState) --------- \(identifiyKey!)")
         }
     }
 
     func peripheral(_ peripheral: CBPeripheral, didDiscoverServices error: (any Error)?) {
-        print("\(Date()) \(TAG) peripheral(didDiscoverServices) ---------")
+        if let error = error {
+            DebugLog.log(TAG, items: "peripheral(didDiscoverServices) ERROR --------- \(error.localizedDescription)")
+            cleanUp()
+            return
+        }
+
+        DebugLog.log(TAG, items: "peripheral(didDiscoverServices) ---------")
 
         // 검색된 모든 service에 대해서 characteristic을 검색
         for service in peripheral.services! {
@@ -1471,9 +1616,16 @@ class BeaconService: NSObject, ObservableObject, CLLocationManagerDelegate, CBCe
     }
 
     func peripheral(_ peripheral: CBPeripheral, didDiscoverCharacteristicsFor service: CBService, error: (any Error)?) {
+        // Handle if any errors occurred
+        if let error = error {
+            DebugLog.log(TAG, items: "peripheral(didDiscoverCharacteristicsFor) ERROR --------- \(error.localizedDescription)")
+            cleanUp()
+            return
+        }
+
         // 검색된 모든 characteristic에 대해 characteristicUUID를 체크하고 일치한다면 peripheral을 구독
         for charactristic in service.characteristics! {
-            print("\(Date()) \(TAG) peripheral(didDiscoverCharacteristicsFor) --------- \(charactristic.uuid)")
+            DebugLog.log(TAG, items: "peripheral(didDiscoverCharacteristicsFor) --------- \(charactristic.uuid)")
 
             if charactristic.uuid == BLE_READ_CHARACTERISTIC_UUID {
                 // 해당 기기의 데이터를 구독
@@ -1489,28 +1641,39 @@ class BeaconService: NSObject, ObservableObject, CLLocationManagerDelegate, CBCe
     }
 
     func peripheral(_ peripheral: CBPeripheral, didUpdateValueFor charactristic: CBCharacteristic, error: (any Error)?) {
+        // Perform any error handling if one occurred
+        if let error = error {
+            DebugLog.log(TAG, items: "BLE DOOR received data ERROR --------- \(error.localizedDescription)")
+            return
+        }
+
         // 전송 받은 Data가 존재하는 지 Check
         let data = charactristic.value
         guard data != nil else { return }
 
-        print("\(Date()) \(TAG) BLE DOOR received data --------- \(data?.hexEncodedString() ?? "ERROR")")
+        DebugLog.log(TAG, items: "BLE DOOR received data --------- \(data?.hexEncodedString() ?? "ERROR")")
         if doorphoneProtocol != nil {
             doorphoneProtocol!.fromByteCode(data?.bytes)
             if doorphoneProtocol!.command == .SECURE_KEY {
                 // Write mID = Command('C') + username
                 let sendMId = "C" + UserDataSingleton.shared.username
                 let sendBytes = doorphoneProtocol!.getSendProtocol(sendMId)
-                print("\(Date()) \(TAG) BLE DOOR send data     --------- \(sendBytes?.hexEncodedString() ?? "ERROR")")
+                DebugLog.log(TAG, items: "BLE DOOR send data     --------- \(sendBytes?.hexEncodedString() ?? "ERROR")")
                 sendBytesToDevice(sendBytes!)
             } else if doorphoneProtocol!.command == .SEND_COMMAND {
                 let receivedData = doorphoneProtocol!.data
                 if receivedData.isEmpty {
-                    print("\(Date()) \(TAG) BLE DOOR --------- Receive SUCCESS data")
-                    // UserNotificationManager.shared.addNotification(id: "Door", title: "[더샵 AiQ 홈]", message: "출입인증에 성공하였습니다.", icon: .ic_onepass)
+                    DebugLog.log(TAG, items: "BLE DOOR --------- Receive SUCCESS data")
+                    if UserDataSingleton.shared.bleDoorphoneNotification {
+                        // 사용자에게 스마트 인증 성공을 알림
+                        UserNotificationManager.shared.addNotification(type: .Doorphone, title: "[더샵AiQ홈]안면인식 도어폰", message: "스마트 인증에 성공하였습니다.", icon: .ic_onepass)
+                        UserNotificationManager.shared.schedule()
+                    }
                 } else {
-                    print("\(Date()) \(TAG) BLE DOOR --------- Receive ERROR data(\(receivedData))")
+                    DebugLog.log(TAG, items: "BLE DOOR --------- Receive ERROR data(\(receivedData))")
                 }
                 // Disconnect from peripheral
+                // App에서 disconnect 하지 않더라도 Device(Doorphone)에서 Disconnect함.
                 // centralManager.cancelPeripheralConnection(peripheral)
             }
         }
@@ -1523,10 +1686,39 @@ class BeaconService: NSObject, ObservableObject, CLLocationManagerDelegate, CBCe
         connectedPeripheral!.writeValue(data, for: writeCharacteristic!, type: writeType)
     }
 
-    func saveUserData(username: String, dong: String, ho: String) {
-        UserDefaults.standard.set(username, forKey: "username")
-        UserDefaults.standard.set(dong, forKey: "dong")
-        UserDefaults.standard.set(ho, forKey: "ho")
+    private func resetCentral() {
+        pendingPeripheral = nil
+        connectedPeripheral = nil
+        writeCharacteristic = nil
+        doorphoneProtocol = nil
+    }
+
+    private func startScan() {
+        guard beaconServiceUsageType.contains(.BLE_DOORPHONE) else { return }
+        guard let centralManager = centralManager, !centralManager.isScanning else { return }
+
+        // Start scanning for a peripheral that matches out saved device
+        centralManager.scanForPeripherals(withServices: [BLE_DOORPHONE_BLUETOOTH_UID], options: [CBCentralManagerScanOptionAllowDuplicatesKey: true])
+        DebugLog.log(TAG, items: "-------- started ble scanForPeripherals")
+    }
+
+    fileprivate func cleanUp() {
+        // Nothing to clean up if we haven't connected to a peripheral, or if the peripheral isn't connected
+        guard let peripheral = connectedPeripheral, peripheral.state != .disconnected else { return }
+
+        // Loop through all of the characteristics in each service,
+        // and if any were configured to notify us, disconnect them
+        peripheral.services?.forEach { service in
+            service.characteristics?.forEach { characteristic in
+                if characteristic.uuid != BLE_READ_CHARACTERISTIC_UUID { return }
+                if characteristic.isNotifying {
+                    peripheral.setNotifyValue(false, for: characteristic)
+                }
+            }
+        }
+
+        // Cancel the connection
+        centralManager?.cancelPeripheralConnection(peripheral)
     }
 }
 
