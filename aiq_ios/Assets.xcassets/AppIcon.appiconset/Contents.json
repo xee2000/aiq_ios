@@ -1,7 +1,7 @@
 {
   "images" : [
     {
-      "filename" : "woorisystem.png",
+      "filename" : "woori_logo.jpeg",
       "idiom" : "universal",
       "platform" : "ios",
       "size" : "1024x1024"
@@ -13,7 +13,7 @@
           "value" : "dark"
         }
       ],
-      "filename" : "woorisystem 1.png",
+      "filename" : "woori_logo 1.jpeg",
       "idiom" : "universal",
       "platform" : "ios",
       "size" : "1024x1024"
@@ -25,7 +25,7 @@
           "value" : "tinted"
         }
       ],
-      "filename" : "woorisystem 2.png",
+      "filename" : "woori_logo 2.jpeg",
       "idiom" : "universal",
       "platform" : "ios",
       "size" : "1024x1024"
