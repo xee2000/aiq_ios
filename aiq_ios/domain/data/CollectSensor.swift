@@ -21,7 +21,6 @@ class CollectSensor: NSObject, URLSessionDelegate {
 
     var sensorsDic: [String: Any] = .init()
     var sensors: [Any] = .init()
-
     var beaconsDic: [String: Any] = .init()
     var beacons: [Any] = .init()
 
@@ -211,11 +210,17 @@ class CollectSensor: NSObject, URLSessionDelegate {
         }
 
         // 네트워크가 연결된 상태라면 정상적으로 REST API 호출 진행
-        guard let url = URL(string: "https://woorisys2022.iptime.org:7777/pms-server-web/app/calcLocation?userId=\(username)&dong=\(dong)&ho=\(ho)&errorcode=\(errorcode)") else {
+        guard let url = URL(string: "https://woorisys2022.iptime.org:7777/pms-server-web/app/calcLocation?userId=\(username)&dong=\(dong)&ho=\(ho)&errorCode=\(errorcode)") else {
             print("Invalid URL")
             completion(nil, NSError(domain: "InvalidURL", code: 0, userInfo: nil))
             return
         }
+
+//        guard let url = URL(string: "https://192.168.0.33:8080/pms-server-web/app/calcLocation?userId=\(username)&dong=\(dong)&ho=\(ho)&errorCode=\(errorcode)") else {
+//            print("Invalid URL")
+//            completion(nil, NSError(domain: "InvalidURL", code: 0, userInfo: nil))
+//            return
+//        }
 
         print("Sending RestApi request to URL: \(url.absoluteString)")
 
@@ -283,7 +288,7 @@ class CollectSensor: NSObject, URLSessionDelegate {
     @objc func ErrorApi(phoneInfo: String,
                         completion: @escaping (Any?, NSError?) -> Void)
     {
-        guard let url = URL(string: "https://192.168.0.33:8080/pms-server-web/app/errorScript?userId=\(username)&dong=\(dong)&ho=\(ho)") else {
+        guard let url = URL(string: "https://woorisys2022.iptime.org:7777/pms-server-web/app/errorScript?userId=\(username)&dong=\(dong)&ho=\(ho)") else {
             print("Invalid URL")
             completion(nil, NSError(domain: "InvalidURL", code: 0, userInfo: nil))
             return

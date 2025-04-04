@@ -23,6 +23,10 @@ class BeaconService: NSObject, ObservableObject, CLLocationManagerDelegate, CBCe
     var data_y = 0.0
     var data_z = 0.0
 
+    var data_x2 = 0.0
+    var data_y2 = 0.0
+    var data_z2 = 0.0
+
     // Gyro 실제 값
     var data_roll = 0.0
     var data_pitch = 0.0
@@ -75,6 +79,7 @@ class BeaconService: NSObject, ObservableObject, CLLocationManagerDelegate, CBCe
     var endBeaconTimer = Timer()
     var startBeaconTimer = Timer()
     // var accelTimer = Timer()
+    var networkManager: NetworkManager?
 
     // 2025.01.09 by 이정호 부장
     var timer00: Timer? = nil
@@ -157,6 +162,9 @@ class BeaconService: NSObject, ObservableObject, CLLocationManagerDelegate, CBCe
     var gyroPitchArray: [Double] = []
     var gyroYawArray: [Double] = []
 
+    var sensorXArray: [Double] = []
+    var sensorYArray: [Double] = []
+    var sensorZArray: [Double] = []
     // Array List
     var stopList = [Int]()
 
@@ -235,7 +243,8 @@ class BeaconService: NSObject, ObservableObject, CLLocationManagerDelegate, CBCe
             if self.isRunScan {
                 self.CancelBluetoothService()
             }
-
+            RestApi.shared.Loading()
+            self.networkManager = NetworkManager()
             // 0325 jhlee 사용자가 접속한 단지의 UUID를 가져오기 위한 코드 추가
             let storedUUIDString = UserDefaults.standard.string(forKey: "UUID") ?? ""
             // 0325 jhlee 사용자가 접속한 단지의 UUID를 가져오기 위한 코드 추가
@@ -597,7 +606,6 @@ class BeaconService: NSObject, ObservableObject, CLLocationManagerDelegate, CBCe
         if beacons.count <= 0 {
             return
         }
-        print("data : ", beaconServiceUsageType)
         // 시작하는 서비스에 주치위치 인식 서비스가 포함되어 있을 경우 Timer 실행
         if beaconServiceUsageType.contains(.BLE_PARKING) {
             // 이동 주차 예상
@@ -625,7 +633,7 @@ class BeaconService: NSObject, ObservableObject, CLLocationManagerDelegate, CBCe
             let distance = beacons[i].accuracy
             DebugLog.log(TAG, items: "Detect Beacon \(uuid ?? "unknown") \(String(format: "%04X", major)) \(String(format: "%04X", minor)) \(rssi) \(beacons[i].proximity) \(distance)")
 
-            if rssi > -75 || rssi != 0 {
+            if rssi > -80 || rssi != 0 {
                 carDraftRssiCheck = true
             } else {
                 carDraftRssiCheck = false
@@ -638,10 +646,7 @@ class BeaconService: NSObject, ObservableObject, CLLocationManagerDelegate, CBCe
 
             // ---------------------------------------------------------------------------------
             func appFunctionAccel() {
-                if beacons[i].rssi == 0 {
-                    return
-                }
-                if AccelBeaconPermission == true {
+                if AccelBeaconPermission == true && carDraftRssiCheck == true {
                     if minor > 32768 {
                         ModifiMinor = minor - 32768
                     } else {
@@ -935,7 +940,7 @@ class BeaconService: NSObject, ObservableObject, CLLocationManagerDelegate, CBCe
 
         // Timer 종료
         mainTimer.invalidate()
-        // accelTimer.invalidate()
+//        accelTimer.invalidate()
     }
 
     @objc func timerFunction() {
@@ -1013,38 +1018,43 @@ class BeaconService: NSObject, ObservableObject, CLLocationManagerDelegate, CBCe
 
     // 2025.01.09 by 수정끝 이정호 부장 자정마다 timer진행
 
-    func accelTimerFunction() {
+    @objc func accelTimerFunction() {
+        if counter % 3 == 0 {
+            AccelBeaconPermission = true
+        } else {
+            AccelBeaconPermission = false
+        }
         accelCount += 1
 
         // SensorSeq 증가
         SensorSeq += 1
+//
+//        if ResultCount < 3, ResultCount >= 0 {
+//            Result = "T"
+//        } else if ResultCount < 12, ResultCount >= 3 {
+//            Result = "S"
+//        } else {
+//            Result = "W"
+//        }
 
-        if ResultCount < 3, ResultCount >= 0 {
-            Result = "T"
-        } else if ResultCount < 12, ResultCount >= 3 {
-            Result = "S"
-        } else {
-            Result = "W"
-        }
         // 이동주차 시작할 때 필요한 상태값 얻기
-        AccelResultData.instance.accRsult = Result
-        // 주차완료 할때 필요한 Queue저장 차에서 처음 내릴때 알기
-        if AccelQ.count == 0 {
-            AccelQ.push(value: Result)
-        } else {
-            AccelQ.push(value: Result)
-
-            let firstResult: String = AccelQ.pop()!
-            let scondResult: String = AccelQ.pop()!
-            if firstResult == "T", scondResult == "S" || scondResult == "W" {
-                AccelBeaconPermission = true
-            }
-            AccelQ.push(value: scondResult)
-        }
+//        AccelResultData.instance.accRsult = Result
+//        // 주차완료 할때 필요한 Queue저장 차에서 처음 내릴때 알기
+//        if AccelQ.count == 0 {
+//            AccelQ.push(value: Result)
+//        } else {
+//            AccelQ.push(value: Result)
+//
+//            let firstResult: String = AccelQ.pop()!
+//            let scondResult: String = AccelQ.pop()!
+        ////            if firstResult == "T", scondResult == "S" || scondResult == "W" {
+        ////                AccelBeaconPermission = true
+        ////            }
+//            AccelQ.push(value: scondResult)
+//        }
 
         if counterFlag == true {
-            s.addSensorDic(seq: "\(SensorSeq)", state: "\(Result)", delay: "\(counter)")
-
+            s.addSensorDic(seq: "\(SensorSeq)", state: "\(ResultCount)", delay: "\(counter)")
             collectSensor.addSensor(s: s)
         }
 
@@ -1060,6 +1070,7 @@ class BeaconService: NSObject, ObservableObject, CLLocationManagerDelegate, CBCe
                 AccelBeaconPermission = false
             }
         }
+        // JHLEE2수정끝///
     }
 
     @objc func endCheckFunction() {
@@ -1258,9 +1269,9 @@ class BeaconService: NSObject, ObservableObject, CLLocationManagerDelegate, CBCe
                                                    pitch: cumulativePitchAverage,
                                                    yaw: cumulativeYawAverage
                                                )
-                                               self.g.addGyroDic(x: String(format: "%.3f", cumulativeRollAverage),
-                                                                 y: String(format: "%.3f", cumulativePitchAverage),
-                                                                 z: String(format: "%.3f", cumulativeYawAverage),
+                                               self.g.addGyroDic(x: String(format: "%.2f", cumulativeRollAverage),
+                                                                 y: String(format: "%.2f", cumulativePitchAverage),
+                                                                 z: String(format: "%.2f", cumulativeYawAverage),
                                                                  delay: "\(self.counter)")
                                                self.collectSensor.addGyro(g: self.g)
 
@@ -1441,7 +1452,7 @@ class BeaconService: NSObject, ObservableObject, CLLocationManagerDelegate, CBCe
         // seq 값 초기화 안되는 현상이 있어 초기화 문구 추가
         SensorSeq = 0
         BeaconSeq = 0
-
+        AccelBeaconPermission = true
         carDraftStartCheck = false
         counterFlag = true
         beaconMajor1 = false
