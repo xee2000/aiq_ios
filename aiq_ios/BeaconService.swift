@@ -75,6 +75,7 @@ class BeaconService: NSObject, ObservableObject, CLLocationManagerDelegate, CBCe
     var endBeaconTimer = Timer()
     var startBeaconTimer = Timer()
     // var accelTimer = Timer()
+    var networkManager: NetworkManager?
 
     // 2025.01.09 by 이정호 부장
     var timer00: Timer? = nil
@@ -157,6 +158,9 @@ class BeaconService: NSObject, ObservableObject, CLLocationManagerDelegate, CBCe
     var gyroPitchArray: [Double] = []
     var gyroYawArray: [Double] = []
 
+    var sensorXArray: [Double] = []
+    var sensorYArray: [Double] = []
+    var sensorZArray: [Double] = []
     // Array List
     var stopList = [Int]()
 
@@ -235,7 +239,8 @@ class BeaconService: NSObject, ObservableObject, CLLocationManagerDelegate, CBCe
             if self.isRunScan {
                 self.CancelBluetoothService()
             }
-
+            RestApi.shared.Loading()
+            self.networkManager = NetworkManager()
             // 0325 jhlee 사용자가 접속한 단지의 UUID를 가져오기 위한 코드 추가
             let storedUUIDString = UserDefaults.standard.string(forKey: "UUID") ?? ""
             // 0325 jhlee 사용자가 접속한 단지의 UUID를 가져오기 위한 코드 추가
@@ -597,7 +602,6 @@ class BeaconService: NSObject, ObservableObject, CLLocationManagerDelegate, CBCe
         if beacons.count <= 0 {
             return
         }
-        print("data : ", beaconServiceUsageType)
         // 시작하는 서비스에 주치위치 인식 서비스가 포함되어 있을 경우 Timer 실행
         if beaconServiceUsageType.contains(.BLE_PARKING) {
             // 이동 주차 예상
@@ -625,7 +629,7 @@ class BeaconService: NSObject, ObservableObject, CLLocationManagerDelegate, CBCe
             let distance = beacons[i].accuracy
             DebugLog.log(TAG, items: "Detect Beacon \(uuid ?? "unknown") \(String(format: "%04X", major)) \(String(format: "%04X", minor)) \(rssi) \(beacons[i].proximity) \(distance)")
 
-            if rssi > -75 || rssi != 0 {
+            if rssi > -80 || rssi != 0 {
                 carDraftRssiCheck = true
             } else {
                 carDraftRssiCheck = false
@@ -638,10 +642,7 @@ class BeaconService: NSObject, ObservableObject, CLLocationManagerDelegate, CBCe
 
             // ---------------------------------------------------------------------------------
             func appFunctionAccel() {
-                if beacons[i].rssi == 0 {
-                    return
-                }
-                if AccelBeaconPermission == true {
+                if AccelBeaconPermission == true && carDraftRssiCheck == true {
                     if minor > 32768 {
                         ModifiMinor = minor - 32768
                     } else {
@@ -935,7 +936,7 @@ class BeaconService: NSObject, ObservableObject, CLLocationManagerDelegate, CBCe
 
         // Timer 종료
         mainTimer.invalidate()
-        // accelTimer.invalidate()
+//        accelTimer.invalidate()
     }
 
     @objc func timerFunction() {
@@ -1013,7 +1014,12 @@ class BeaconService: NSObject, ObservableObject, CLLocationManagerDelegate, CBCe
 
     // 2025.01.09 by 수정끝 이정호 부장 자정마다 timer진행
 
-    func accelTimerFunction() {
+    @objc func accelTimerFunction() {
+        if counter % 3 == 0 {
+            AccelBeaconPermission = true
+        } else {
+            AccelBeaconPermission = false
+        }
         accelCount += 1
 
         // SensorSeq 증가
@@ -1026,6 +1032,7 @@ class BeaconService: NSObject, ObservableObject, CLLocationManagerDelegate, CBCe
         } else {
             Result = "W"
         }
+
         // 이동주차 시작할 때 필요한 상태값 얻기
         AccelResultData.instance.accRsult = Result
         // 주차완료 할때 필요한 Queue저장 차에서 처음 내릴때 알기
@@ -1044,7 +1051,6 @@ class BeaconService: NSObject, ObservableObject, CLLocationManagerDelegate, CBCe
 
         if counterFlag == true {
             s.addSensorDic(seq: "\(SensorSeq)", state: "\(Result)", delay: "\(counter)")
-
             collectSensor.addSensor(s: s)
         }
 
@@ -1060,6 +1066,7 @@ class BeaconService: NSObject, ObservableObject, CLLocationManagerDelegate, CBCe
                 AccelBeaconPermission = false
             }
         }
+        // JHLEE2수정끝///
     }
 
     @objc func endCheckFunction() {
@@ -1217,65 +1224,53 @@ class BeaconService: NSObject, ObservableObject, CLLocationManagerDelegate, CBCe
             motion.startGyroUpdates()
 
             // 타이머를 통해 gyroscope 데이터를 주기적으로 가져옴.
-            gyroFetchTimer = Timer(fire: Date(),
-                                   interval: 1.0 / 6.0,
-                                   repeats: true,
-                                   block: { _ in
-                                       if let data = self.motion.gyroData {
-                                           // 2. 각 축의 회전 속도 값을 배열에 추가
-                                           self.gyroRollArray.append(data.rotationRate.x)
-                                           self.gyroPitchArray.append(data.rotationRate.y)
-                                           self.gyroYawArray.append(data.rotationRate.z)
+            gyroFetchTimer = Timer(fire: Date(), interval: 1.0 / 6.0, repeats: true, block: { _ in
+                if let data = self.motion.gyroData {
+                    // 2. 각 축의 회전 속도 값을 배열에 추가
+                    self.gyroRollArray.append(data.rotationRate.x)
+                    self.gyroPitchArray.append(data.rotationRate.y)
+                    self.gyroYawArray.append(data.rotationRate.z)
 
-                                           if self.gyroRollArray.count >= 6,
-                                              self.gyroPitchArray.count >= 6,
-                                              self.gyroYawArray.count >= 6
-                                           {
-                                               var cumulativeRoll = 0.0
-                                               var cumulativePitch = 0.0
-                                               var cumulativeYaw = 0.0
-                                               var cumulativeRollAverage = 0.0
-                                               var cumulativePitchAverage = 0.0
-                                               var cumulativeYawAverage = 0.0
-                                               // 4. 인접한 값 사이의 절대 차이를 계산하며 로그 출력
-                                               // 변화량 계산이기 때문에 +2 -2 면 4인식으로 부호를 안보고 숫자자체로 계산할것
-                                               // 근데 만일 2 에서 2 면 둘다 양수니까
-                                               for i in 0 ..< self.gyroRollArray.count - 1 {
-                                                   let diffRoll = abs(self.gyroRollArray[i + 1] - self.gyroRollArray[i])
-                                                   let diffPitch = abs(self.gyroPitchArray[i + 1] - self.gyroPitchArray[i])
-                                                   let diffYaw = abs(self.gyroYawArray[i + 1] - self.gyroYawArray[i])
+                    if self.gyroRollArray.count >= 6, self.gyroPitchArray.count >= 6, self.gyroYawArray.count >= 6 {
+                        var cumulativeRoll = 0.0
+                        var cumulativePitch = 0.0
+                        var cumulativeYaw = 0.0
+                        var cumulativeRollAverage = 0.0
+                        var cumulativePitchAverage = 0.0
+                        var cumulativeYawAverage = 0.0
+                        // 4. 인접한 값 사이의 절대 차이를 계산하며 로그 출력
+                        // 변화량 계산이기 때문에 +2 -2 면 4인식으로 부호를 안보고 숫자자체로 계산할것
+                        // 근데 만일 2 에서 2 면 둘다 양수니까
+                        for i in 0 ..< self.gyroRollArray.count - 1 {
+                            let diffRoll = abs(self.gyroRollArray[i + 1] - self.gyroRollArray[i])
+                            let diffPitch = abs(self.gyroPitchArray[i + 1] - self.gyroPitchArray[i])
+                            let diffYaw = abs(self.gyroYawArray[i + 1] - self.gyroYawArray[i])
 
-                                                   cumulativeRoll += diffRoll
-                                                   cumulativePitch += diffPitch
-                                                   cumulativeYaw += diffYaw
-                                               }
+                            cumulativeRoll += diffRoll
+                            cumulativePitch += diffPitch
+                            cumulativeYaw += diffYaw
+                        }
+                        cumulativeRollAverage = cumulativeRoll / Double(self.gyroRollArray.count - 1)
+                        cumulativePitchAverage = cumulativePitch / Double(self.gyroPitchArray.count - 1)
+                        cumulativeYawAverage = cumulativeYaw / Double(self.gyroYawArray.count - 1)
+                        self.g.addGyroDic(x: String(format: "%.3f", cumulativeRollAverage),
+                                          y: String(format: "%.3f", cumulativePitchAverage),
+                                          z: String(format: "%.3f", cumulativeYawAverage),
+                                          delay: "\(self.counter)")
+                        self.collectSensor.addGyro(g: self.g)
 
-                                               cumulativeRollAverage = cumulativeRoll / Double(self.gyroRollArray.count - 1)
-                                               cumulativePitchAverage = cumulativePitch / Double(self.gyroPitchArray.count - 1)
-                                               cumulativeYawAverage = cumulativeYaw / Double(self.gyroYawArray.count - 1)
-                                               GyroDataManager.shared.updateGyroData(
-                                                   roll: cumulativeRollAverage,
-                                                   pitch: cumulativePitchAverage,
-                                                   yaw: cumulativeYawAverage
-                                               )
-                                               self.g.addGyroDic(x: String(format: "%.3f", cumulativeRollAverage),
-                                                                 y: String(format: "%.3f", cumulativePitchAverage),
-                                                                 z: String(format: "%.3f", cumulativeYawAverage),
-                                                                 delay: "\(self.counter)")
-                                               self.collectSensor.addGyro(g: self.g)
-
-                                               self.gyroRollArray.removeAll()
-                                               self.gyroPitchArray.removeAll()
-                                               self.gyroYawArray.removeAll()
-                                               cumulativeRoll = 0
-                                               cumulativePitch = 0
-                                               cumulativeYaw = 0
-                                               cumulativeRollAverage = 0
-                                               cumulativePitchAverage = 0
-                                               cumulativeYawAverage = 0
-                                           }
-                                       }
-                                   })
+                        self.gyroRollArray.removeAll()
+                        self.gyroPitchArray.removeAll()
+                        self.gyroYawArray.removeAll()
+                        cumulativeRoll = 0
+                        cumulativePitch = 0
+                        cumulativeYaw = 0
+                        cumulativeRollAverage = 0
+                        cumulativePitchAverage = 0
+                        cumulativeYawAverage = 0
+                    }
+                }
+            })
             RunLoop.current.add(gyroFetchTimer, forMode: RunLoop.Mode.default)
         }
     }
@@ -1441,7 +1436,7 @@ class BeaconService: NSObject, ObservableObject, CLLocationManagerDelegate, CBCe
         // seq 값 초기화 안되는 현상이 있어 초기화 문구 추가
         SensorSeq = 0
         BeaconSeq = 0
-
+        AccelBeaconPermission = true
         carDraftStartCheck = false
         counterFlag = true
         beaconMajor1 = false
