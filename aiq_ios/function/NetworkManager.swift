@@ -15,10 +15,15 @@ class NetworkManager {
 
     init() {
         monitor.pathUpdateHandler = { path in
-            if path.status == .satisfied {
-                RestApi.sendGyroInformation(count: 1111)
-                RestApi.sendPendingRestApiRequests()
-            } else {}
+            let status = path.status == .satisfied
+            if status {
+                RestApi.isConnected = status
+                RestApi.shared.Loading()
+
+            } else {
+                RestApi.isConnected = status
+                RestApi.shared.Loading()
+            }
         }
 
         monitor.start(queue: queue)

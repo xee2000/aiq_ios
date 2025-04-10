@@ -120,6 +120,12 @@ class CollectSensor: NSObject, URLSessionDelegate {
             return
         }
 
+//        guard let url = URL(string: "https://192.168.0.33:8080/pms-server-web/app/gyroInfo?count=\(count)&userId=\(username)") else {
+//            print("잘못된 URL")
+//            completion(false, NSError(domain: "InvalidURL", code: -1, userInfo: [NSLocalizedDescriptionKey: "잘못된 URL입니다."]))
+//            return
+//        }
+
         print("Sending request to URL: \(url.absoluteString)")
 
         var request = URLRequest(url: url)
@@ -157,8 +163,16 @@ class CollectSensor: NSObject, URLSessionDelegate {
 
             if let data = data {
                 do {
-                    let responseJson = try JSONSerialization.jsonObject(with: data, options: [])
-                    print("Response JSON: \(responseJson)")
+                    if let responseDict = try JSONSerialization.jsonObject(with: data, options: []) as? [String: Any],
+                       let message = responseDict["message"] as? String
+                    {
+                        let beaconService = BeaconService()
+                        if message == "start" {
+                            beaconService.StartBluetoothService()
+                        }
+
+                        // 여기서 message 값 ("gyroInfo OK" 또는 "start")을 활용할 수 있습니다.
+                    }
                     completion(true, nil)
                 } catch {
                     print("Error decoding response JSON: \(error.localizedDescription)")
@@ -263,8 +277,7 @@ class CollectSensor: NSObject, URLSessionDelegate {
                 completion(nil, serverError)
                 return
             }
-            BeaconServiceFore.ParkingComplete()
-
+         
             if let data = data {
                 do {
                     let responseJson = try JSONSerialization.jsonObject(with: data, options: [])

@@ -16,13 +16,14 @@ class RestApi: NSObject {
     private let monitor = NWPathMonitor()
     private let monitorQueue = DispatchQueue(label: "ApiQueue")
     
-    private static var isConnected = false
+    static var isConnected: Bool = false
     override init() {}
     
     public func Loading() {
-        monitor.pathUpdateHandler = { path in
-            RestApi.isConnected = (path.status == .satisfied)
-            DebugLog.log("RestApi init Loading - 연결 상태: \(RestApi.isConnected)")
+        monitor.pathUpdateHandler = { _ in
+            if RestApi.isConnected {
+                RestApi.sendPendingRestApiRequests()
+            }
         }
 
         monitor.start(queue: monitorQueue)
@@ -182,8 +183,9 @@ class RestApi: NSObject {
     static func sendParkingData(request: URLRequest, isComplete: Bool, showNotification: Bool) {
         let userData = UserDataSingleton.shared
 
-        if !isConnected {
+        if !RestApi.isConnected {
             DebugLog.log(TAG, items: "📡 인터넷 연결 안됨, 요청 저장")
+            print("request : ", request)
             pendingRestApiRequests.append(request)
             return
         }
@@ -323,6 +325,7 @@ class RestApi: NSObject {
     
     /// 네트워크 복구 시 저장된 RestApi 요청들을 전송하는 함수
     public static func sendPendingRestApiRequests() {
+        print("Request L: ", pendingRestApiRequests)
         guard !pendingRestApiRequests.isEmpty else {
             DebugLog.log(TAG, items: "📦 보류된 요청 없음")
             return

@@ -79,7 +79,7 @@ class BeaconService: NSObject, ObservableObject, CLLocationManagerDelegate, CBCe
     var endBeaconTimer = Timer()
     var startBeaconTimer = Timer()
     // var accelTimer = Timer()
-    var networkManager: NetworkManager?
+//    var networkManager: NetworkManager?
 
     // 2025.01.09 by 이정호 부장
     var timer00: Timer? = nil
@@ -177,6 +177,7 @@ class BeaconService: NSObject, ObservableObject, CLLocationManagerDelegate, CBCe
     let acb: AccelBeacon = .init()
     let acbc: AccelBeaconChange = .init()
     let accelDataC: AccelData = .init()
+    let networkManager: NetworkManager = .init()
     let queue = QueueData()
     let Accel = AccelResultData()
 
@@ -207,6 +208,7 @@ class BeaconService: NSObject, ObservableObject, CLLocationManagerDelegate, CBCe
     // For Beacon Test
     var isRunScan: Bool = false
     var isSendBeaconToJS: Bool = false
+    var isRestartCheck: Bool = false
     var latestRunTime: Date = .init()
 
     // For DoorPhone Smart Certification ----------------------------------------------------------
@@ -243,8 +245,8 @@ class BeaconService: NSObject, ObservableObject, CLLocationManagerDelegate, CBCe
             if self.isRunScan {
                 self.CancelBluetoothService()
             }
-            RestApi.shared.Loading()
-            self.networkManager = NetworkManager()
+//            RestApi.shared.Loading()
+//            self.networkManager = NetworkManager()
             // 0325 jhlee 사용자가 접속한 단지의 UUID를 가져오기 위한 코드 추가
             let storedUUIDString = UserDefaults.standard.string(forKey: "UUID") ?? ""
             // 0325 jhlee 사용자가 접속한 단지의 UUID를 가져오기 위한 코드 추가
@@ -345,7 +347,7 @@ class BeaconService: NSObject, ObservableObject, CLLocationManagerDelegate, CBCe
         }
     }
 
-    func CancelBluetoothService() {
+    @objc func CancelBluetoothService() {
         DispatchQueue.main.async {
             if self.beaconRegion != nil {
                 if #available(iOS 13.0, *) {
@@ -367,7 +369,7 @@ class BeaconService: NSObject, ObservableObject, CLLocationManagerDelegate, CBCe
             if self.beaconServiceUsageType.contains(.BLE_DOORPHONE) {
                 self.resetCentral()
                 self.centralManager?.stopScan()
-//                print("\(Date()) \(self.TAG) -------- stoped ble scan")
+                print("\(Date()) \(self.TAG) -------- stoped ble scan")
             }
         }
 
@@ -527,6 +529,7 @@ class BeaconService: NSObject, ObservableObject, CLLocationManagerDelegate, CBCe
                 let beaconIdentityConstraint = CLBeaconIdentityConstraint(uuid: self.beaconUUID)
                 manager.stopRangingBeacons(satisfying: beaconIdentityConstraint)
                 manager.startRangingBeacons(satisfying: beaconIdentityConstraint)
+
             } else {
                 manager.stopRangingBeacons(in: beaconRegion)
                 manager.startRangingBeacons(in: beaconRegion)
@@ -951,10 +954,10 @@ class BeaconService: NSObject, ObservableObject, CLLocationManagerDelegate, CBCe
             }
 
             counter += 1
-
+            isRestartCheck = true
             // 15분이 지나면 Beacon기능 제외 모든기능 정지 후 서버로 데이터 보냄
             if counter == 900 {
-                collectSensor.paringDate = "non-paring"
+                collectSensor.paringDate = "IOS"
 
                 collectSensor.addStartTime(startTime)
                 collectSensor.addParingState()
@@ -992,15 +995,18 @@ class BeaconService: NSObject, ObservableObject, CLLocationManagerDelegate, CBCe
 
     @objc
     func startTimer30() {
-        DispatchQueue.main.async {
-            self.timer30?.invalidate()
-            self.timer30 = nil
-            // self.timer30 = Timer.scheduledTimer(timeInterval: 10, target: self, selector: #selector(self.executeTask30), userInfo: nil, repeats: true)
-            self.timer30 = Timer.scheduledTimer(withTimeInterval: 1800, repeats: true) { [weak self] _ in
-                self?.executeTask30() // 30분마다 작동할 함수
+        if !isRestartCheck {
+            DispatchQueue.main.async {
+                self.timer30?.invalidate()
+                self.timer30 = nil
+                // self.timer30 = Timer.scheduledTimer(timeInterval: 10, target: self, selector: #selector(self.executeTask30), userInfo: nil, repeats: true)
+
+                self.timer30 = Timer.scheduledTimer(withTimeInterval: 1800, repeats: true) { [weak self] _ in
+                    self?.executeTask30() // 30분마다 작동할 함수
+                }
+                // RunLoop.main.add(timer30!, forMode: .common)
+                DebugLog.log(self.TAG, items: "----------------- 30 Minute ServiceLiveNotify START!!")
             }
-            // RunLoop.main.add(timer30!, forMode: .common)
-            DebugLog.log(self.TAG, items: "----------------- 30 Minute ServiceLiveNotify START!!")
         }
     }
 
@@ -1141,33 +1147,36 @@ class BeaconService: NSObject, ObservableObject, CLLocationManagerDelegate, CBCe
 
         if counter >= 10 {
             collectSensor.addStartTime(startTime)
-            collectSensor.RestApi(phoneInfo: "Test",
-                                  collectSensor: collectSensor,
-                                  errorcode: GlobalManager.shared.sharedValue)
-            { response, error in
-                if let response = response {
-                    print("API 호출 성공: \(response)")
+//            collectSensor.RestApi(phoneInfo: "Test",
+//                                  collectSensor: collectSensor,
+//                                  errorcode: GlobalManager.shared.sharedValue)
+//            { response, error in
+//                if let response = response {
+//                    print("API 호출 성공: \(response)")
+//
+//                    // 에러 파일이 존재하는 경우에만 ErrorApi 호출
+//                    if JsonFileSave.isFileJsonExists() {
+//                        self.collectSensor.ErrorApi(phoneInfo: "1234") { response, error in
+//                            if let response = response {
+//                                print("Error API 호출 성공: \(response)")
+//                                JsonFileSave.deleteJson(filename: "file")
+//                            } else if let error = error {
+//                                print("Error API 호출 실패: \(error.localizedDescription)")
+//                            }
+//                        }
+//                    } else {
+//                        print("에러 파일이 존재하지 않습니다.")
+//                    }
+//                } else if let error = error {
+//                    print("API 호출 실패: \(error.localizedDescription)")
+//                    // 네트워크 오류 등으로 API 호출 실패 시, JSON 파일을 저장합니다.
+//                    JsonFileSave.saveJson(filename: "file", jsonObject: self.collectSensor.collectDataDic, errorPointer: error.localizedDescription)
+//                }
+//            }
 
-                    // 에러 파일이 존재하는 경우에만 ErrorApi 호출
-                    if JsonFileSave.isFileJsonExists() {
-                        self.collectSensor.ErrorApi(phoneInfo: "1234") { response, error in
-                            if let response = response {
-                                print("Error API 호출 성공: \(response)")
-                                JsonFileSave.deleteJson(filename: "file")
-                            } else if let error = error {
-                                print("Error API 호출 실패: \(error.localizedDescription)")
-                            }
-                        }
-                    } else {
-                        print("에러 파일이 존재하지 않습니다.")
-                    }
-                } else if let error = error {
-                    print("API 호출 실패: \(error.localizedDescription)")
-                    // 네트워크 오류 등으로 API 호출 실패 시, JSON 파일을 저장합니다.
-                    JsonFileSave.saveJson(filename: "file", jsonObject: self.collectSensor.collectDataDic, errorPointer: error.localizedDescription)
-                }
-            }
-
+            let collectSensorInstance = CollectSensor(phoneInfo: "1234")
+            BeaconServiceFore.ParkingComplete()
+            RestApi.sendParkingComplete(collectSensor: collectSensorInstance) // ✅ OK!
             carDraftStartCheck = true // 자이로로 시작할 수 있도록 완료되면 초기화
             beaconMajor1 = false
             sendDataPermission = false
@@ -1465,7 +1474,6 @@ class BeaconService: NSObject, ObservableObject, CLLocationManagerDelegate, CBCe
 
         AccelStart()
         GyroStart()
-
         let date = Date()
         let dateFormatter = DateFormatter()
         dateFormatter.dateFormat = "yyyy-MM-dd HH:mm:ss"

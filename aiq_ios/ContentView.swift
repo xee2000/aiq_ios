@@ -5,7 +5,7 @@ import UserNotifications
 
 struct ContentView: View {
     @StateObject private var permissionManager = PermissionManager()
-    @StateObject private var beaconService = BeaconService()
+    @StateObject public var beaconService = BeaconService()
     
     @AppStorage("username") private var username: String = ""
     @AppStorage("dong") private var dong: String = ""
@@ -125,7 +125,7 @@ struct ServiceRunningView: View {
     let onLogout: () -> Void
     @ObservedObject var gyroData: GyroDataManager // ContentView에서 전달받은 공유 인스턴스 사용
     @State private var savedFileName: String? = nil // 저장된 파일 이름을 저장하는 상태 변수
-    
+    @StateObject public var beaconService = BeaconService()
     var body: some View {
         VStack(spacing: 20) {
             Text("데이터 수집중입니다.")
@@ -133,6 +133,7 @@ struct ServiceRunningView: View {
                 .padding()
         
             Button("로그아웃") {
+                beaconService.CancelBluetoothService()
                 onLogout()
             }
             .padding()
